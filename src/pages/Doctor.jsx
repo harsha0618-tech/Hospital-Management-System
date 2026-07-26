@@ -1,47 +1,93 @@
 import { useState } from "react";
 import DataTable from "../components/DataTable";
 import PageHeader from "../components/PageHeader";
+import SearchBar from "../components/SearchBar";
 import mockPatients from "../data/mockPatients";
+import medicinesList from "../data/medicinesList";
 
 const columns = ["Patient ID", "Name", "Age", "Gender", "Diagnosis & Treatment"];
 
 function Doctor() {
   const [patients, setPatients] = useState(mockPatients);
   const [openId, setOpenId] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
 
-  // Top form state
-  const [formPatientId, setFormPatientId] = useState("");
-  const [formDiagnosis, setFormDiagnosis] = useState("");
-  const [formTest, setFormTest] = useState("");
-  const [formPrescription, setFormPrescription] = useState("");
+  const [diagnosis, setDiagnosis] = useState("");
+  const [testInput, setTestInput] = useState("");
+  const [prescriptionInput, setPrescriptionInput] = useState("");
+  const [medSuggestions, setMedSuggestions] = useState([]);
 
-  const handleFormSubmit = (e) => {
-    e.preventDefault();
-    if (!formPatientId) return;
-
-    setPatients((prev) =>
-      prev.map((p) => {
-        if (p.patientId !== formPatientId) return p;
-        return {
-          ...p,
-          diagnosis: formDiagnosis.trim() || p.diagnosis,
-          testsRecommended: formTest.trim()
-            ? [...p.testsRecommended, formTest.trim()]
-            : p.testsRecommended,
-          prescription: formPrescription.trim()
-            ? [...p.prescription, formPrescription.trim()]
-            : p.prescription,
-        };
-      })
-    );
-
-    setFormPatientId("");
-    setFormDiagnosis("");
-    setFormTest("");
-    setFormPrescription("");
+  const openPatient = (patient) => {
+    setOpenId(patient.patientId);
+    setDiagnosis(patient.diagnosis || "");
+    setTestInput("");
+    setPrescriptionInput("");
+    setMedSuggestions([]);
   };
 
-  const openPatient = (id) => setOpenId(openId === id ? null : id);
+  const closePatient = () => setOpenId(null);
+
+  const handleAddTest = (patientId) => {
+    if (!testInput.trim()) return;
+    setPatients((prev) =>
+      prev.map((p) =>
+        p.patientId === patientId
+          ? { ...p, testsRecommended: [...p.testsRecommended, testInput.trim()] }
+          : p
+      )
+    );
+    setTestInput("");
+  };
+
+  const handlePrescriptionChange = (value) => {
+    setPrescriptionInput(value);
+    if (value.trim().length >= 2) {
+      const matches = medicinesList.filter((m) =>
+        m.toLowerCase().includes(value.toLowerCase())
+      );
+      setMedSuggestions(matches);
+    } else {
+      setMedSuggestions([]);
+    }
+  };
+
+  const handleSelectMedicine = (patientId, medName) => {
+    setPatients((prev) =>
+      prev.map((p) =>
+        p.patientId === patientId
+          ? { ...p, prescription: [...p.prescription, medName] }
+          : p
+      )
+    );
+    setPrescriptionInput("");
+    setMedSuggestions([]);
+  };
+
+  const handleAddPrescriptionManual = (patientId) => {
+    if (!prescriptionInput.trim()) return;
+    setPatients((prev) =>
+      prev.map((p) =>
+        p.patientId === patientId
+          ? { ...p, prescription: [...p.prescription, prescriptionInput.trim()] }
+          : p
+      )
+    );
+    setPrescriptionInput("");
+    setMedSuggestions([]);
+  };
+
+  const handleSaveDiagnosis = (patientId) => {
+    setPatients((prev) =>
+      prev.map((p) => (p.patientId === patientId ? { ...p, diagnosis } : p))
+    );
+    closePatient();
+  };
+
+  const filteredPatients = patients.filter(
+    (p) =>
+      p.patientId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
     <div className="min-h-screen px-6 py-10">
@@ -53,97 +99,19 @@ function Doctor() {
           colorClass="doctor"
         />
 
-        {/* Add Entry Form */}
-        <div className="mb-8">
-          <h2 className="text-lg font-semibold text-gray-700 mb-3">
-            Add Diagnosis / Treatment
-          </h2>
-          <form
-            onSubmit={handleFormSubmit}
-            className="bg-white border border-gray-100 rounded-card shadow-soft p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
-          >
-            <div className="flex flex-col">
-              <label className="text-sm font-medium text-gray-600 mb-1">
-                Patient ID
-              </label>
-              <select
-                value={formPatientId}
-                onChange={(e) => setFormPatientId(e.target.value)}
-                required
-                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-doctor-DEFAULT"
-              >
-                <option value="">Select Patient</option>
-                {patients.map((p) => (
-                  <option key={p.patientId} value={p.patientId}>
-                    {p.patientId} — {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+        <SearchBar value={searchTerm} onChange={setSearchTerm} colorClass="doctor" />
 
-            <div className="flex flex-col">
-              <label className="text-sm font-medium text-gray-600 mb-1">
-                Diagnosis
-              </label>
-              <input
-                type="text"
-                value={formDiagnosis}
-                onChange={(e) => setFormDiagnosis(e.target.value)}
-                placeholder="e.g. Viral Fever"
-                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-doctor-DEFAULT"
-              />
-            </div>
-
-            <div className="flex flex-col">
-              <label className="text-sm font-medium text-gray-600 mb-1">
-                Test Recommended
-              </label>
-              <input
-                type="text"
-                value={formTest}
-                onChange={(e) => setFormTest(e.target.value)}
-                placeholder="e.g. Blood Test"
-                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-doctor-DEFAULT"
-              />
-            </div>
-
-            <div className="flex flex-col">
-              <label className="text-sm font-medium text-gray-600 mb-1">
-                Prescription
-              </label>
-              <input
-                type="text"
-                value={formPrescription}
-                onChange={(e) => setFormPrescription(e.target.value)}
-                placeholder="e.g. Paracetamol 500mg"
-                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-doctor-DEFAULT"
-              />
-            </div>
-
-            <div className="lg:col-span-4 flex justify-end mt-1">
-              <button
-                type="submit"
-                className="bg-doctor-DEFAULT text-white px-6 py-2.5 rounded-md text-sm font-medium hover:bg-doctor-dark transition"
-              >
-                Save Entry
-              </button>
-            </div>
-          </form>
-        </div>
-
-        {/* Table */}
-        <h2 className="text-lg font-semibold text-gray-700 mb-3">
-          Patient Records
-        </h2>
         <DataTable
           columns={columns}
-          rows={patients}
+          rows={filteredPatients}
           renderRow={(patient) => (
             <>
               <tr
                 key={patient.patientId}
                 className="border-t border-gray-100 hover:bg-gray-50 cursor-pointer"
-                onClick={() => openPatient(patient.patientId)}
+                onClick={() =>
+                  openId === patient.patientId ? closePatient() : openPatient(patient)
+                }
               >
                 <td className="px-4 py-3 font-medium text-doctor-dark whitespace-nowrap">
                   {patient.patientId}
@@ -155,52 +123,166 @@ function Doctor() {
                   {openId === patient.patientId
                     ? "▲ Hide"
                     : patient.diagnosis
-                    ? `View (${patient.diagnosis})`
-                    : "▼ View details"}
+                    ? `View / Edit (${patient.diagnosis})`
+                    : "▼ Add Diagnosis"}
                 </td>
               </tr>
 
               {openId === patient.patientId && (
                 <tr>
                   <td colSpan={columns.length} className="bg-doctor-light px-6 py-5">
-                    <div className="flex flex-col gap-3 text-sm">
-                      <p>
-                        <strong className="text-doctor-dark">Diagnosis:</strong>{" "}
-                        {patient.diagnosis || "Not added yet"}
-                      </p>
+                    <div className="flex flex-col gap-5">
+                      {/* Medical History */}
                       <div>
-                        <strong className="text-doctor-dark">Tests:</strong>
-                        <div className="flex flex-wrap gap-2 mt-1">
+                        <label className="text-sm font-medium text-doctor-dark block mb-2">
+                          Medical History
+                        </label>
+                        {(!patient.visitHistory || patient.visitHistory.length === 0) ? (
+                          <p className="text-xs text-gray-400">
+                            No previous visits recorded for this patient.
+                          </p>
+                        ) : (
+                          <div className="flex flex-col gap-2">
+                            {patient.visitHistory.map((visit, idx) => (
+                              <div
+                                key={idx}
+                                className="bg-white border border-doctor-DEFAULT/40 rounded-md px-3 py-2 text-xs"
+                              >
+                                <p className="font-medium text-doctor-dark mb-1">
+                                  {visit.date} — {visit.doctorAssigned?.name} (
+                                  {visit.doctorAssigned?.department})
+                                </p>
+                                <p className="text-gray-600">
+                                  Diagnosis: {visit.diagnosis || "—"}
+                                </p>
+                                {visit.testsRecommended?.length > 0 && (
+                                  <p className="text-gray-600">
+                                    Tests: {visit.testsRecommended.join(", ")}
+                                  </p>
+                                )}
+                                {visit.prescription?.length > 0 && (
+                                  <p className="text-gray-600">
+                                    Prescription: {visit.prescription.join(", ")}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Diagnosis */}
+                      <div>
+                        <label className="text-sm font-medium text-doctor-dark block mb-1">
+                          Current Diagnosis
+                        </label>
+                        <input
+                          type="text"
+                          value={diagnosis}
+                          onChange={(e) => setDiagnosis(e.target.value)}
+                          className="border border-gray-300 rounded-md px-3 py-2 text-sm w-full sm:w-1/2 focus:outline-none focus:ring-2 focus:ring-doctor-DEFAULT"
+                          placeholder="e.g. Viral Fever"
+                        />
+                      </div>
+
+                      {/* Tests Recommended */}
+                      <div>
+                        <label className="text-sm font-medium text-doctor-dark block mb-1">
+                          Tests Recommended
+                        </label>
+                        <div className="flex flex-wrap gap-2 mb-2">
                           {patient.testsRecommended.length === 0 ? (
-                            <span className="text-xs text-gray-400">None</span>
+                            <span className="text-xs text-gray-400">No tests added yet</span>
                           ) : (
-                            patient.testsRecommended.map((t, i) => (
+                            patient.testsRecommended.map((test, idx) => (
                               <span
-                                key={i}
+                                key={idx}
                                 className="bg-white border border-doctor-DEFAULT text-doctor-dark text-xs px-3 py-1 rounded-full"
                               >
-                                {t}
+                                {test}
                               </span>
                             ))
                           )}
+                        </div>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={testInput}
+                            onChange={(e) => setTestInput(e.target.value)}
+                            placeholder="e.g. Blood Test"
+                            className="border border-gray-300 rounded-md px-3 py-2 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-doctor-DEFAULT"
+                          />
+                          <button
+                            onClick={() => handleAddTest(patient.patientId)}
+                            className="bg-doctor-DEFAULT text-white px-4 py-2 rounded-md text-sm hover:opacity-90"
+                          >
+                            Add Test
+                          </button>
                         </div>
                       </div>
+
+                      {/* Prescription with autocomplete */}
                       <div>
-                        <strong className="text-doctor-dark">Prescription:</strong>
-                        <div className="flex flex-wrap gap-2 mt-1">
+                        <label className="text-sm font-medium text-doctor-dark block mb-1">
+                          Prescription
+                        </label>
+                        <div className="flex flex-wrap gap-2 mb-2">
                           {patient.prescription.length === 0 ? (
-                            <span className="text-xs text-gray-400">None</span>
+                            <span className="text-xs text-gray-400">
+                              No medicines prescribed yet
+                            </span>
                           ) : (
-                            patient.prescription.map((m, i) => (
+                            patient.prescription.map((med, idx) => (
                               <span
-                                key={i}
+                                key={idx}
                                 className="bg-white border border-doctor-DEFAULT text-doctor-dark text-xs px-3 py-1 rounded-full"
                               >
-                                {m}
+                                {med}
                               </span>
                             ))
                           )}
                         </div>
+                        <div className="relative flex gap-2">
+                          <div className="flex-1 relative">
+                            <input
+                              type="text"
+                              value={prescriptionInput}
+                              onChange={(e) => handlePrescriptionChange(e.target.value)}
+                              placeholder="Type medicine name (e.g. Para...)"
+                              className="border border-gray-300 rounded-md px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-doctor-DEFAULT"
+                            />
+                            {medSuggestions.length > 0 && (
+                              <div className="absolute top-full left-0 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-card-hover z-10 overflow-hidden">
+                                {medSuggestions.map((m) => (
+                                  <button
+                                    key={m}
+                                    type="button"
+                                    onClick={() => handleSelectMedicine(patient.patientId, m)}
+                                    className="block w-full text-left px-3 py-2 text-sm hover:bg-doctor-light text-gray-700"
+                                  >
+                                    {m}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => handleAddPrescriptionManual(patient.patientId)}
+                            className="bg-doctor-DEFAULT text-white px-4 py-2 rounded-md text-sm hover:opacity-90"
+                          >
+                            Add Medicine
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Save */}
+                      <div className="flex justify-end">
+                        <button
+                          onClick={() => handleSaveDiagnosis(patient.patientId)}
+                          className="bg-doctor-dark text-white px-5 py-2 rounded-md text-sm font-medium hover:opacity-90"
+                        >
+                          Save & Close
+                        </button>
                       </div>
                     </div>
                   </td>
