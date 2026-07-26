@@ -26,15 +26,35 @@ function Receptionist() {
   const [printBillId, setPrintBillId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
 
+  // Mode toggle
+  const [formMode, setFormMode] = useState("new"); // "new" | "returning"
+
+  // New patient fields
   const [name, setName] = useState("");
   const [age, setAge] = useState("");
   const [gender, setGender] = useState("");
+
+  // Shared fields (used by both modes)
   const [doctorName, setDoctorName] = useState("");
   const [nurseName, setNurseName] = useState("");
+  const [consultationFee, setConsultationFee] = useState("500");
 
-  const handleAddPatient = (e) => {
+  // Returning patient field
+  const [returningPatientId, setReturningPatientId] = useState("");
+
+  const resetForm = () => {
+    setName("");
+    setAge("");
+    setGender("");
+    setDoctorName("");
+    setNurseName("");
+    setConsultationFee("500");
+    setReturningPatientId("");
+  };
+
+  const handleAddNewPatient = (e) => {
     e.preventDefault();
-    if (!name || !age || !gender || !doctorName || !nurseName) return;
+    if (!name || !age || !gender || !doctorName || !nurseName || !consultationFee) return;
 
     const selectedDoctor = doctorsList.find((d) => d.name === doctorName);
 
@@ -55,17 +75,57 @@ function Receptionist() {
       labTestCost: 0,
       medicines: [],
       pharmacyTotalCost: 0,
-      consultationFee: 500,
+      consultationFee: Number(consultationFee) || 0,
       totalBill: 0,
       visitHistory: [],
     };
 
     setPatients((prev) => [...prev, newPatient]);
-    setName("");
-    setAge("");
-    setGender("");
-    setDoctorName("");
-    setNurseName("");
+    resetForm();
+  };
+
+  const handleReadmitPatient = (e) => {
+    e.preventDefault();
+    if (!returningPatientId || !doctorName || !nurseName || !consultationFee) return;
+
+    const selectedDoctor = doctorsList.find((d) => d.name === doctorName);
+
+    setPatients((prev) =>
+      prev.map((p) => {
+        if (p.patientId !== returningPatientId) return p;
+
+        // Archive the current visit into history before resetting
+        const archivedVisit = {
+          date: p.date,
+          doctorAssigned: p.doctorAssigned,
+          diagnosis: p.diagnosis,
+          testsRecommended: p.testsRecommended,
+          prescription: p.prescription,
+        };
+
+        return {
+          ...p,
+          date: getTodayFormatted(),
+          doctorAssigned: selectedDoctor,
+          nurseAssigned: nurseName,
+          status: "Admitted",
+          consultationFee: Number(consultationFee) || 0,
+          // Reset current visit fields — fresh admission
+          diagnosis: "",
+          testsRecommended: [],
+          prescription: [],
+          labReports: [],
+          labReport: "",
+          labTestCost: 0,
+          medicines: [],
+          pharmacyTotalCost: 0,
+          totalBill: 0,
+          visitHistory: [archivedVisit, ...(p.visitHistory || [])],
+        };
+      })
+    );
+
+    resetForm();
   };
 
   const calculateBill = (patient) => {
@@ -108,101 +168,233 @@ function Receptionist() {
           colorClass="reception"
         />
 
-        {/* Add New Patient Form */}
+        {/* Mode Toggle */}
+        <div className="mb-4 flex gap-2">
+          <button
+            onClick={() => {
+              setFormMode("new");
+              resetForm();
+            }}
+            className={`px-5 py-2 rounded-full text-sm font-medium transition ${
+              formMode === "new"
+                ? "bg-reception-DEFAULT text-white"
+                : "bg-white text-gray-500 border border-gray-200"
+            }`}
+          >
+            🆕 New Patient
+          </button>
+          <button
+            onClick={() => {
+              setFormMode("returning");
+              resetForm();
+            }}
+            className={`px-5 py-2 rounded-full text-sm font-medium transition ${
+              formMode === "returning"
+                ? "bg-reception-DEFAULT text-white"
+                : "bg-white text-gray-500 border border-gray-200"
+            }`}
+          >
+            🔁 Returning Patient
+          </button>
+        </div>
+
+        {/* Add / Re-admit Form */}
         <div className="mb-8">
           <h2 className="text-lg font-semibold text-gray-700 mb-3">
-            Register New Patient
+            {formMode === "new" ? "Register New Patient" : "Re-admit Returning Patient"}
           </h2>
-          <form
-            onSubmit={handleAddPatient}
-            className="bg-white border border-gray-100 rounded-card shadow-soft p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
-          >
-            <div className="flex flex-col">
-              <label className="text-sm font-medium text-gray-600 mb-1">Name</label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Patient name"
-                required
-                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-reception-DEFAULT"
-              />
-            </div>
 
-            <div className="flex flex-col">
-              <label className="text-sm font-medium text-gray-600 mb-1">Age</label>
-              <input
-                type="number"
-                value={age}
-                onChange={(e) => setAge(e.target.value)}
-                placeholder="Age"
-                required
-                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-reception-DEFAULT"
-              />
-            </div>
+          {formMode === "new" ? (
+            <form
+              onSubmit={handleAddNewPatient}
+              className="bg-white border border-gray-100 rounded-card shadow-soft p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+            >
+              <div className="flex flex-col">
+                <label className="text-sm font-medium text-gray-600 mb-1">Name</label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Patient name"
+                  required
+                  className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-reception-DEFAULT"
+                />
+              </div>
 
-            <div className="flex flex-col">
-              <label className="text-sm font-medium text-gray-600 mb-1">Gender</label>
-              <select
-                value={gender}
-                onChange={(e) => setGender(e.target.value)}
-                required
-                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-reception-DEFAULT"
-              >
-                <option value="">Select Gender</option>
-                <option value="Male">Male</option>
-                <option value="Female">Female</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
+              <div className="flex flex-col">
+                <label className="text-sm font-medium text-gray-600 mb-1">Age</label>
+                <input
+                  type="number"
+                  value={age}
+                  onChange={(e) => setAge(e.target.value)}
+                  placeholder="Age"
+                  required
+                  className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-reception-DEFAULT"
+                />
+              </div>
 
-            <div className="flex flex-col">
-              <label className="text-sm font-medium text-gray-600 mb-1">
-                Doctor Assigned
-              </label>
-              <select
-                value={doctorName}
-                onChange={(e) => setDoctorName(e.target.value)}
-                required
-                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-reception-DEFAULT"
-              >
-                <option value="">Select Doctor</option>
-                {doctorsList.map((d) => (
-                  <option key={d.name} value={d.name}>
-                    {d.name} — {d.department}
-                  </option>
-                ))}
-              </select>
-            </div>
+              <div className="flex flex-col">
+                <label className="text-sm font-medium text-gray-600 mb-1">Gender</label>
+                <select
+                  value={gender}
+                  onChange={(e) => setGender(e.target.value)}
+                  required
+                  className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-reception-DEFAULT"
+                >
+                  <option value="">Select Gender</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
 
-            <div className="flex flex-col">
-              <label className="text-sm font-medium text-gray-600 mb-1">
-                Nurse Assigned
-              </label>
-              <select
-                value={nurseName}
-                onChange={(e) => setNurseName(e.target.value)}
-                required
-                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-reception-DEFAULT"
-              >
-                <option value="">Select Nurse</option>
-                {nursesList.map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </div>
+              <div className="flex flex-col">
+                <label className="text-sm font-medium text-gray-600 mb-1">
+                  Doctor Assigned
+                </label>
+                <select
+                  value={doctorName}
+                  onChange={(e) => setDoctorName(e.target.value)}
+                  required
+                  className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-reception-DEFAULT"
+                >
+                  <option value="">Select Doctor</option>
+                  {doctorsList.map((d) => (
+                    <option key={d.name} value={d.name}>
+                      {d.name} — {d.department}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <div className="flex items-end">
-              <button
-                type="submit"
-                className="w-full bg-reception-DEFAULT text-white px-6 py-2.5 rounded-md text-sm font-medium hover:bg-reception-dark transition"
-              >
-                Register Patient
-              </button>
-            </div>
-          </form>
+              <div className="flex flex-col">
+                <label className="text-sm font-medium text-gray-600 mb-1">
+                  Nurse Assigned
+                </label>
+                <select
+                  value={nurseName}
+                  onChange={(e) => setNurseName(e.target.value)}
+                  required
+                  className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-reception-DEFAULT"
+                >
+                  <option value="">Select Nurse</option>
+                  {nursesList.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex flex-col">
+                <label className="text-sm font-medium text-gray-600 mb-1">
+                  Consultation Fee (₹)
+                </label>
+                <input
+                  type="number"
+                  value={consultationFee}
+                  onChange={(e) => setConsultationFee(e.target.value)}
+                  placeholder="e.g. 500"
+                  required
+                  className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-reception-DEFAULT"
+                />
+              </div>
+
+              <div className="lg:col-span-3 flex justify-end">
+                <button
+                  type="submit"
+                  className="bg-reception-DEFAULT text-white px-6 py-2.5 rounded-md text-sm font-medium hover:bg-reception-dark transition"
+                >
+                  Register Patient
+                </button>
+              </div>
+            </form>
+          ) : (
+            <form
+              onSubmit={handleReadmitPatient}
+              className="bg-white border border-gray-100 rounded-card shadow-soft p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
+            >
+              <div className="flex flex-col lg:col-span-2">
+                <label className="text-sm font-medium text-gray-600 mb-1">
+                  Search Existing Patient
+                </label>
+                <select
+                  value={returningPatientId}
+                  onChange={(e) => setReturningPatientId(e.target.value)}
+                  required
+                  className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-reception-DEFAULT"
+                >
+                  <option value="">Select Patient ID / Name</option>
+                  {patients.map((p) => (
+                    <option key={p.patientId} value={p.patientId}>
+                      {p.patientId} — {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex flex-col">
+                <label className="text-sm font-medium text-gray-600 mb-1">
+                  Doctor Assigned
+                </label>
+                <select
+                  value={doctorName}
+                  onChange={(e) => setDoctorName(e.target.value)}
+                  required
+                  className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-reception-DEFAULT"
+                >
+                  <option value="">Select Doctor</option>
+                  {doctorsList.map((d) => (
+                    <option key={d.name} value={d.name}>
+                      {d.name} — {d.department}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex flex-col">
+                <label className="text-sm font-medium text-gray-600 mb-1">
+                  Nurse Assigned
+                </label>
+                <select
+                  value={nurseName}
+                  onChange={(e) => setNurseName(e.target.value)}
+                  required
+                  className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-reception-DEFAULT"
+                >
+                  <option value="">Select Nurse</option>
+                  {nursesList.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex flex-col">
+                <label className="text-sm font-medium text-gray-600 mb-1">
+                  Consultation Fee (₹)
+                </label>
+                <input
+                  type="number"
+                  value={consultationFee}
+                  onChange={(e) => setConsultationFee(e.target.value)}
+                  placeholder="e.g. 500"
+                  required
+                  className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-reception-DEFAULT"
+                />
+              </div>
+
+              <div className="lg:col-span-4 flex justify-end">
+                <button
+                  type="submit"
+                  className="bg-reception-DEFAULT text-white px-6 py-2.5 rounded-md text-sm font-medium hover:bg-reception-dark transition"
+                >
+                  Re-admit Patient
+                </button>
+              </div>
+            </form>
+          )}
         </div>
 
         {/* Patients Table */}
