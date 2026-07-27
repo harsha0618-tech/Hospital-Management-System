@@ -4,11 +4,12 @@ import DashboardLayout from "../components/DashboardLayout";
 import SearchBar from "../components/SearchBar";
 import mockPatients from "../data/mockPatients";
 import medicinesList from "../data/medicinesList";
-
+import { useToast } from "../components/ToastProvider";
 const columns = ["Patient ID", "Name", "Age", "Gender", "Diagnosis & Treatment"];
 
 function Doctor() {
   const [patients, setPatients] = useState(mockPatients);
+  const showToast = useToast();
   const [openId, setOpenId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -36,6 +37,7 @@ function Doctor() {
           : p
       )
     );
+    showToast("Test added successfully", "success");
     setTestInput("");
   };
 
@@ -59,9 +61,11 @@ function Doctor() {
           : p
       )
     );
+
     setPrescriptionInput("");
     setMedSuggestions([]);
   };
+  showToast(`${medName} added to prescription`, "success");
 
   const handleAddPrescriptionManual = (patientId) => {
     if (!prescriptionInput.trim()) return;
@@ -82,6 +86,7 @@ function Doctor() {
     );
     closePatient();
   };
+  showToast("Diagnosis saved successfully", "success");
 
   const filteredPatients = patients.filter(
     (p) =>

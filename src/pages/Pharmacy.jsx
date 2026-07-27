@@ -4,11 +4,12 @@ import DashboardLayout from "../components/DashboardLayout";
 import SearchBar from "../components/SearchBar";
 import mockPatients from "../data/mockPatients";
 import medicinesList from "../data/medicinesList";
-
+import { useToast } from "../components/ToastProvider";
 const columns = ["Patient ID", "Name", "Date", "Gender", "Age", "Medicines"];
 
 function Pharmacy() {
   const [patients, setPatients] = useState(mockPatients);
+  const showToast = useToast();
   const [openId, setOpenId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -53,6 +54,7 @@ function Pharmacy() {
     setFormCost("");
     setMedSuggestions([]);
   };
+  showToast(`${formMedicine} dispensed successfully`, "success");
 
   const openPatient = (id) => setOpenId(openId === id ? null : id);
 
