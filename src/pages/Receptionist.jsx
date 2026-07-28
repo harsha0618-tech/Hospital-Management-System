@@ -7,7 +7,7 @@ import doctorsList from "../data/doctorsList";
 import nursesList from "../data/nursesList";
 import { generatePatientId } from "../data/patientIdGenerator";
 import { getTodayFormatted } from "../data/dateUtils";
-import { useToast } from "../components/ToastProvider";
+
 const columns = [
   "Patient ID",
   "Name",
@@ -22,7 +22,6 @@ const columns = [
 
 function Receptionist() {
   const [patients, setPatients] = useState(mockPatients);
-  const showToast = useToast();
   const [billingOpenId, setBillingOpenId] = useState(null);
   const [printBillId, setPrintBillId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -79,7 +78,6 @@ function Receptionist() {
 
     setPatients((prev) => [...prev, newPatient]);
     resetForm();
-    showToast(`Patient ${newPatient.name} registered successfully`, "success");
   };
 
   const handleReadmitPatient = (e) => {
@@ -122,7 +120,6 @@ function Receptionist() {
     );
 
     resetForm();
-    showToast(`Patient re-admitted successfully`, "success");
   };
 
   const calculateBill = (patient) => {
@@ -135,13 +132,11 @@ function Receptionist() {
 
   const handleGenerateBill = (patientId) => {
     setPatients((prev) =>
-      
       prev.map((p) =>
         p.patientId === patientId ? { ...p, totalBill: calculateBill(p) } : p
       )
     );
   };
-  showToast(`Bill generated successfully`, "success");
 
   const handleDischarge = (patientId) => {
     setPatients((prev) =>
@@ -150,7 +145,6 @@ function Receptionist() {
       )
     );
   };
-  showToast(`Patient marked as discharged`, "info");
 
   const filteredPatients = patients.filter(
     (p) =>
@@ -165,7 +159,6 @@ function Receptionist() {
       icon="📋"
       colorClass="reception"
     >
-      {/* Mode Toggle */}
       <div className="mb-4 flex gap-2">
         <button
           onClick={() => {
@@ -195,7 +188,6 @@ function Receptionist() {
         </button>
       </div>
 
-      {/* Add / Re-admit Form */}
       <div className="mb-8">
         <h2 className="text-lg font-semibold text-gray-700 mb-3">
           {formMode === "new" ? "Register New Patient" : "Re-admit Returning Patient"}
@@ -394,7 +386,6 @@ function Receptionist() {
         )}
       </div>
 
-      {/* Patients Table */}
       <h2 className="text-lg font-semibold text-gray-700 mb-3">Patient Records</h2>
 
       <SearchBar value={searchTerm} onChange={setSearchTerm} colorClass="reception" />

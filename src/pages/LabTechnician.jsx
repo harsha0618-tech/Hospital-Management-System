@@ -3,12 +3,11 @@ import DataTable from "../components/DataTable";
 import DashboardLayout from "../components/DashboardLayout";
 import SearchBar from "../components/SearchBar";
 import mockPatients from "../data/mockPatients";
-import { useToast } from "../components/ToastProvider";
+
 const columns = ["Patient ID", "Name", "Age", "Gender", "Doctor", "Test Reports"];
 
 function LabTechnician() {
   const [patients, setPatients] = useState(mockPatients);
-  const showToast = useToast();
   const [openId, setOpenId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -51,7 +50,6 @@ function LabTechnician() {
 
     setReportInput("");
     setCostInput("");
-    showToast("Report added successfully!", "success");
   };
 
   const filteredPatients = patients.filter(
