@@ -2,13 +2,17 @@ import { useState } from "react";
 import DataTable from "../components/DataTable";
 import DashboardLayout from "../components/DashboardLayout";
 import SearchBar from "../components/SearchBar";
-import mockPatients from "../data/mockPatients";
 import doctorsList from "../data/doctorsList";
 import nursesList from "../data/nursesList";
 import { generatePatientId } from "../data/patientIdGenerator";
+import { generateQueueNumber } from "../data/queueCounter";
 import { getTodayFormatted } from "../data/dateUtils";
-
+import { usePatients } from "../context/PatientContext";
+import { AuthProvider } from "./context/AuthContext";
+import ProtectedRoute from "./routes/ProtectedRoute";
+import { useToast } from "../context/ToastContext";
 const columns = [
+  "Queue #",
   "Patient ID",
   "Name",
   "Age",
@@ -21,11 +25,11 @@ const columns = [
 ];
 
 function Receptionist() {
-  const [patients, setPatients] = useState(mockPatients);
+  const { patients, addPatient, updatePatient } = usePatients();
   const [billingOpenId, setBillingOpenId] = useState(null);
   const [printBillId, setPrintBillId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
-
+  const { showToast } = useToast();
   const [formMode, setFormMode] = useState("new");
 
   const [name, setName] = useState("");
@@ -74,9 +78,12 @@ function Receptionist() {
       consultationFee: Number(consultationFee) || 0,
       totalBill: 0,
       visitHistory: [],
+      queueNumber: generateQueueNumber(),
+      queueStatus: "Waiting",
     };
 
-    setPatients((prev) => [...prev, newPatient]);
+    addPatient(newPatient);
+    showToast(`Patient ${newPatient.name} registered — Queue #${newPatient.queueNumber}`);
     resetForm();
   };
 
@@ -86,38 +93,35 @@ function Receptionist() {
 
     const selectedDoctor = doctorsList.find((d) => d.name === doctorName);
 
-    setPatients((prev) =>
-      prev.map((p) => {
-        if (p.patientId !== returningPatientId) return p;
+    updatePatient(returningPatientId, (p) => {
+      const archivedVisit = {
+        date: p.date,
+        doctorAssigned: p.doctorAssigned,
+        diagnosis: p.diagnosis,
+        testsRecommended: p.testsRecommended,
+        prescription: p.prescription,
+      };
 
-        const archivedVisit = {
-          date: p.date,
-          doctorAssigned: p.doctorAssigned,
-          diagnosis: p.diagnosis,
-          testsRecommended: p.testsRecommended,
-          prescription: p.prescription,
-        };
-
-        return {
-          ...p,
-          date: getTodayFormatted(),
-          doctorAssigned: selectedDoctor,
-          nurseAssigned: nurseName,
-          status: "Admitted",
-          consultationFee: Number(consultationFee) || 0,
-          diagnosis: "",
-          testsRecommended: [],
-          prescription: [],
-          labReports: [],
-          labReport: "",
-          labTestCost: 0,
-          medicines: [],
-          pharmacyTotalCost: 0,
-          totalBill: 0,
-          visitHistory: [archivedVisit, ...(p.visitHistory || [])],
-        };
-      })
-    );
+      return {
+        date: getTodayFormatted(),
+        doctorAssigned: selectedDoctor,
+        nurseAssigned: nurseName,
+        status: "Admitted",
+        consultationFee: Number(consultationFee) || 0,
+        diagnosis: "",
+        testsRecommended: [],
+        prescription: [],
+        labReports: [],
+        labReport: "",
+        labTestCost: 0,
+        medicines: [],
+        pharmacyTotalCost: 0,
+        totalBill: 0,
+        visitHistory: [archivedVisit, ...(p.visitHistory || [])],
+        queueNumber: generateQueueNumber(),
+        queueStatus: "Waiting",
+      };
+    });
 
     resetForm();
   };
@@ -131,19 +135,12 @@ function Receptionist() {
   };
 
   const handleGenerateBill = (patientId) => {
-    setPatients((prev) =>
-      prev.map((p) =>
-        p.patientId === patientId ? { ...p, totalBill: calculateBill(p) } : p
-      )
-    );
+    updatePatient(patientId, (p) => ({ totalBill: calculateBill(p) }));
   };
 
   const handleDischarge = (patientId) => {
-    setPatients((prev) =>
-      prev.map((p) =>
-        p.patientId === patientId ? { ...p, status: "Discharged" } : p
-      )
-    );
+    showToast("Patient discharged");
+    updatePatient(patientId, { status: "Discharged" });
   };
 
   const filteredPatients = patients.filter(
@@ -393,8 +390,18 @@ function Receptionist() {
       <DataTable
         columns={columns}
         rows={filteredPatients}
+        roleColor="reception"
         renderRow={(patient) => (
           <tr key={patient.patientId} className="border-t border-gray-100 hover:bg-gray-50">
+            <td className="px-4 py-3 whitespace-nowrap">
+              {patient.queueNumber ? (
+                <span className="bg-reception-light text-reception-dark text-xs font-semibold px-2.5 py-1 rounded-full">
+                  #{patient.queueNumber}
+                </span>
+              ) : (
+                <span className="text-gray-300 text-xs">—</span>
+              )}
+            </td>
             <td className="px-4 py-3 font-medium text-reception-dark whitespace-nowrap">
               {patient.patientId}
             </td>

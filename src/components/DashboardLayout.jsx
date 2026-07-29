@@ -1,15 +1,21 @@
 import { Link, useLocation } from "react-router-dom";
-
+import { useAuth } from "../context/AuthContext";
 const navItems = [
   { name: "Receptionist", path: "/receptionist", icon: "📋", color: "reception" },
   { name: "Doctor", path: "/doctor", icon: "🩺", color: "doctor" },
+  { name: "Nurse", path: "/nurse", icon: "🩹", color: "nurse" },
   { name: "Lab Technician", path: "/lab", icon: "🧪", color: "lab" },
   { name: "Pharmacy", path: "/pharmacy", icon: "💊", color: "pharmacy" },
+  
   { name: "Admin", path: "/admin", icon: "🗂️", color: "admin" },
+  
 ];
+
 
 function DashboardLayout({ title, subtitle, icon, colorClass = "brand", children }) {
   const location = useLocation();
+  const { user, logout } = useAuth();
+const navigate = useNavigate();
 
   return (
     <div className="min-h-screen flex bg-gray-50">
@@ -72,17 +78,21 @@ function DashboardLayout({ title, subtitle, icon, colorClass = "brand", children
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
-            <span
-              className={`hidden sm:inline-flex items-center gap-1.5 bg-${colorClass}-light text-${colorClass}-dark text-xs font-medium px-3 py-1.5 rounded-full`}
-            >
-              ● Logged in as {title.replace(" Dashboard", "")}
-            </span>
+           <span className={`hidden sm:inline-flex items-center gap-1.5 bg-${colorClass}-light text-${colorClass}-dark text-xs font-medium px-3 py-1.5 rounded-full`}>
+  ● {user?.name || title.replace(" Dashboard", "")}
+</span>
             <Link
               to="/"
               className="text-sm text-gray-500 hover:text-gray-800 bg-gray-50 hover:bg-gray-100 px-4 py-2 rounded-full transition"
             >
               ← Home
             </Link>
+            <button
+  onClick={() => { logout(); navigate("/"); }}
+  className="text-sm text-gray-500 hover:text-gray-800 bg-gray-50 hover:bg-gray-100 px-4 py-2 rounded-full transition"
+>
+  Logout
+</button>
           </div>
         </header>
 

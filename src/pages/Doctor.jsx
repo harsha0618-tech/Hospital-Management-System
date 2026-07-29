@@ -2,21 +2,24 @@ import { useState } from "react";
 import DataTable from "../components/DataTable";
 import DashboardLayout from "../components/DashboardLayout";
 import SearchBar from "../components/SearchBar";
-import mockPatients from "../data/mockPatients";
 import medicinesList from "../data/medicinesList";
-
+import { usePatients } from "../context/PatientContext";
+import EMRModal from "../components/EMRModal";
+import { AuthProvider } from "./context/AuthContext";
+import ProtectedRoute from "./routes/ProtectedRoute";
+import { useToast } from "../context/ToastContext";
 const columns = ["Patient ID", "Name", "Age", "Gender", "Diagnosis & Treatment"];
 
 function Doctor() {
-  const [patients, setPatients] = useState(mockPatients);
+  const { patients, updatePatient } = usePatients();
   const [openId, setOpenId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
-
+  const { showToast } = useToast();
   const [diagnosis, setDiagnosis] = useState("");
   const [testInput, setTestInput] = useState("");
   const [prescriptionInput, setPrescriptionInput] = useState("");
   const [medSuggestions, setMedSuggestions] = useState([]);
-
+  const [emrPatientId, setEmrPatientId] = useState(null);
   const openPatient = (patient) => {
     setOpenId(patient.patientId);
     setDiagnosis(patient.diagnosis || "");
@@ -27,15 +30,17 @@ function Doctor() {
 
   const closePatient = () => setOpenId(null);
 
+  const handleStartConsultation = (patientId) => {
+    updatePatient(patientId, { queueStatus: "In Consultation" });
+    const patient = patients.find((p) => p.patientId === patientId);
+    if (patient) openPatient(patient);
+  };
+
   const handleAddTest = (patientId) => {
     if (!testInput.trim()) return;
-    setPatients((prev) =>
-      prev.map((p) =>
-        p.patientId === patientId
-          ? { ...p, testsRecommended: [...p.testsRecommended, testInput.trim()] }
-          : p
-      )
-    );
+    updatePatient(patientId, (p) => ({
+      testsRecommended: [...p.testsRecommended, testInput.trim()],
+    }));
     setTestInput("");
   };
 
@@ -52,34 +57,28 @@ function Doctor() {
   };
 
   const handleSelectMedicine = (patientId, medName) => {
-    setPatients((prev) =>
-      prev.map((p) =>
-        p.patientId === patientId
-          ? { ...p, prescription: [...p.prescription, medName] }
-          : p
-      )
-    );
+    updatePatient(patientId, (p) => ({
+      prescription: [...p.prescription, medName],
+    }));
     setPrescriptionInput("");
     setMedSuggestions([]);
   };
 
   const handleAddPrescriptionManual = (patientId) => {
     if (!prescriptionInput.trim()) return;
-    setPatients((prev) =>
-      prev.map((p) =>
-        p.patientId === patientId
-          ? { ...p, prescription: [...p.prescription, prescriptionInput.trim()] }
-          : p
-      )
-    );
+    updatePatient(patientId, (p) => ({
+      prescription: [...p.prescription, prescriptionInput.trim()],
+    }));
     setPrescriptionInput("");
     setMedSuggestions([]);
   };
 
   const handleSaveDiagnosis = (patientId) => {
-    setPatients((prev) =>
-      prev.map((p) => (p.patientId === patientId ? { ...p, diagnosis } : p))
-    );
+    updatePatient(patientId, (p) => ({
+      diagnosis,
+      ...(p.queueNumber ? { queueStatus: "Completed" } : {}),
+    }));
+    showToast("Patient Diagnised");
     closePatient();
   };
 
@@ -89,6 +88,12 @@ function Doctor() {
       p.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const waitingQueue = patients
+    .filter((p) => p.queueStatus === "Waiting")
+    .sort((a, b) => (a.queueNumber || 0) - (b.queueNumber || 0));
+
+  const inConsultation = patients.find((p) => p.queueStatus === "In Consultation");
+
   return (
     <DashboardLayout
       title="Doctor Dashboard"
@@ -96,11 +101,55 @@ function Doctor() {
       icon="🩺"
       colorClass="doctor"
     >
+      {(waitingQueue.length > 0 || inConsultation) && (
+        <div className="mb-6 bg-white border border-gray-100 rounded-card shadow-soft p-5">
+          <h2 className="text-sm font-semibold text-doctor-dark mb-3">Today's Queue</h2>
+
+          {inConsultation && (
+            <div className="mb-3 flex items-center justify-between bg-doctor-light rounded-md px-4 py-2.5">
+              <span className="text-sm text-doctor-dark font-medium">
+                🩺 Currently with: #{inConsultation.queueNumber} — {inConsultation.name}
+              </span>
+              <button
+                onClick={() => openPatient(inConsultation)}
+                className="text-xs text-doctor-dark underline"
+              >
+                Open Chart
+              </button>
+            </div>
+          )}
+
+          {waitingQueue.length === 0 ? (
+            <p className="text-xs text-gray-400">No patients currently waiting.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {waitingQueue.map((p) => (
+                <div
+                  key={p.patientId}
+                  className="flex items-center gap-2 bg-doctor-light/60 border border-doctor-DEFAULT/30 rounded-full pl-3 pr-1.5 py-1"
+                >
+                  <span className="text-xs font-medium text-doctor-dark">
+                    #{p.queueNumber} {p.name}
+                  </span>
+                  <button
+                    onClick={() => handleStartConsultation(p.patientId)}
+                    className="text-[11px] bg-doctor-DEFAULT text-white px-2.5 py-1 rounded-full hover:opacity-90"
+                  >
+                    Start
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <SearchBar value={searchTerm} onChange={setSearchTerm} colorClass="doctor" />
 
       <DataTable
         columns={columns}
         rows={filteredPatients}
+        roleColor="doctor"
         renderRow={(patient) => (
           <>
             <tr
@@ -267,6 +316,9 @@ function Doctor() {
                         </button>
                       </div>
                     </div>
+                    <button onClick={() => setEmrPatientId(patient.patientId)} className="text-xs text-doctor-dark underline self-start">
+  📄 View Full EMR
+</button>
 
                     <div className="flex justify-end">
                       <button
@@ -283,6 +335,9 @@ function Doctor() {
           </>
         )}
       />
+      {emrPatientId && (
+  <EMRModal patient={patients.find((p) => p.patientId === emrPatientId)} onClose={() => setEmrPatientId(null)} />
+)}
     </DashboardLayout>
   );
 }

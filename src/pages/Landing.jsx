@@ -1,5 +1,8 @@
 import { useNavigate } from "react-router-dom";
-
+import { useState } from "react";
+import { useAuth } from "../context/AuthContext";
+import doctorsList from "../data/doctorsList";
+import nursesList from "../data/nursesList";
 const roles = [
   {
     name: "Receptionist",
@@ -15,6 +18,15 @@ const roles = [
     icon: "🩺",
     desc: "Diagnosis & prescriptions",
   },
+
+  {
+    name: "Nurse",
+    path: "/nurse",
+    color: "nurse",
+    icon: "🩹",
+    desc: "Vitals & patient care",
+  },
+
   {
     name: "Lab Technician",
     path: "/lab",
@@ -62,6 +74,32 @@ const highlights = [
 ];
 
 function Landing() {
+  const { login } = useAuth();
+const [loginRole, setLoginRole] = useState(null); // { path, color, staffList }
+const [selectedStaff, setSelectedStaff] = useState("");
+
+const roleStaffMap = {
+  "/doctor": doctorsList.map((d) => d.name),
+  "/nurse": nursesList,
+};
+
+const handleRoleClick = (role) => {
+  const staffList = roleStaffMap[role.path];
+  if (!staffList) {
+    login(role.path.slice(1), role.name);
+    navigate(role.path);
+    return;
+  }
+  setLoginRole(role);
+  setSelectedStaff("");
+};
+
+const confirmLogin = () => {
+  if (!selectedStaff) return;
+  login(loginRole.path.slice(1), selectedStaff);
+  navigate(loginRole.path);
+  setLoginRole(null);
+};
   const navigate = useNavigate();
 
   return (
@@ -119,7 +157,7 @@ function Landing() {
   {roles.map((role) => (
     <button
       key={role.name}
-      onClick={() => navigate(role.path)}
+     onClick={() => handleRoleClick(role)}
       className="group bg-white border border-gray-100 rounded-card shadow-soft p-6 flex flex-col items-center text-center transition-all duration-200 hover:-translate-y-1 hover:shadow-card-hover cursor-pointer"
     >
       <span
@@ -175,6 +213,25 @@ function Landing() {
           UI prototype — data not yet connected to a live database
         </p>
       </footer>
+      {loginRole && (
+  <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+    <div className="bg-white rounded-card shadow-card-hover max-w-sm w-full p-6">
+      <h3 className="text-sm font-semibold text-gray-700 mb-3">Login as {loginRole.name}</h3>
+      <select
+        value={selectedStaff}
+        onChange={(e) => setSelectedStaff(e.target.value)}
+        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mb-4"
+      >
+        <option value="">Select your name</option>
+        {roleStaffMap[loginRole.path].map((n) => <option key={n} value={n}>{n}</option>)}
+      </select>
+      <div className="flex justify-end gap-2">
+        <button onClick={() => setLoginRole(null)} className="text-sm text-gray-500 px-4 py-2">Cancel</button>
+        <button onClick={confirmLogin} className="bg-brand-DEFAULT text-white text-sm px-4 py-2 rounded-md">Login</button>
+      </div>
+    </div>
+  </div>
+)}
     </div>
   );
 }

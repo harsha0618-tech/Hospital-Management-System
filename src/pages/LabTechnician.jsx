@@ -2,15 +2,17 @@ import { useState } from "react";
 import DataTable from "../components/DataTable";
 import DashboardLayout from "../components/DashboardLayout";
 import SearchBar from "../components/SearchBar";
-import mockPatients from "../data/mockPatients";
-
+import { usePatients } from "../context/PatientContext";
+import { AuthProvider } from "./context/AuthContext";
+import ProtectedRoute from "./routes/ProtectedRoute";
+import { useToast } from "../context/ToastContext";
 const columns = ["Patient ID", "Name", "Age", "Gender", "Doctor", "Test Reports"];
 
 function LabTechnician() {
-  const [patients, setPatients] = useState(mockPatients);
+  const { patients, updatePatient } = usePatients();
   const [openId, setOpenId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
-
+  const { showToast } = useToast();
   const [reportInput, setReportInput] = useState("");
   const [costInput, setCostInput] = useState("");
   const [selectedTest, setSelectedTest] = useState("");
@@ -27,26 +29,23 @@ function LabTechnician() {
   const handleAddReport = (patientId) => {
     if (!selectedTest || !reportInput.trim()) return;
 
-    setPatients((prev) =>
-      prev.map((p) => {
-        if (p.patientId !== patientId) return p;
+    updatePatient(patientId, (p) => {
+      const newReportEntry = {
+        test: selectedTest,
+        report: reportInput.trim(),
+        cost: Number(costInput) || 0,
+      };
 
-        const newReportEntry = {
-          test: selectedTest,
-          report: reportInput.trim(),
-          cost: Number(costInput) || 0,
-        };
+      const existingReports = Array.isArray(p.labReports) ? p.labReports : [];
 
-        const existingReports = Array.isArray(p.labReports) ? p.labReports : [];
-
-        return {
-          ...p,
-          labReports: [...existingReports, newReportEntry],
-          labTestCost: (p.labTestCost || 0) + newReportEntry.cost,
-          labReport: newReportEntry.report,
-        };
-      })
-    );
+      return {
+        labReports: [...existingReports, newReportEntry],
+        labTestCost: (p.labTestCost || 0) + newReportEntry.cost,
+        labReport: newReportEntry.report,
+        
+      };
+      showToast("Patient discharged");
+    });
 
     setReportInput("");
     setCostInput("");
@@ -67,9 +66,10 @@ function LabTechnician() {
     >
       <SearchBar value={searchTerm} onChange={setSearchTerm} colorClass="lab" />
 
-      <DataTable
+     <DataTable
         columns={columns}
         rows={filteredPatients}
+        roleColor="lab"
         renderRow={(patient) => (
           <>
             <tr

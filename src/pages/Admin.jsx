@@ -1,15 +1,17 @@
 import { useState } from "react";
 import DashboardLayout from "../components/DashboardLayout";
 import SearchBar from "../components/SearchBar";
-import mockPatients from "../data/mockPatients";
-
+import { usePatients } from "../context/PatientContext";
+import EMRModal from "../components/EMRModal";
+import { AuthProvider } from "./context/AuthContext";
+import ProtectedRoute from "./routes/ProtectedRoute";
 function Admin() {
-  const [patients] = useState(mockPatients);
+  const { patients } = usePatients();
   const [openId, setOpenId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
 
   const toggleRow = (id) => setOpenId(openId === id ? null : id);
-
+  const [emrPatientId, setEmrPatientId] = useState(null);
   const totalPatients = patients.length;
   const totalRevenue = patients.reduce(
     (sum, p) => sum + (p.consultationFee || 0) + (p.labTestCost || 0) + (p.pharmacyTotalCost || 0),
@@ -85,6 +87,7 @@ function Admin() {
               <th className="px-4 py-3 font-semibold whitespace-nowrap">Pharmacy ₹</th>
               <th className="px-4 py-3 font-semibold whitespace-nowrap">Total Bill</th>
               <th className="px-4 py-3 font-semibold whitespace-nowrap">Details</th>
+              <th className="px-4 py-3 font-semibold whitespace-nowrap">Queue</th>
             </tr>
           </thead>
           <tbody>
@@ -114,6 +117,15 @@ function Admin() {
                   >
                     <td className="sticky left-0 z-10 bg-white px-4 py-3 font-medium text-admin-dark whitespace-nowrap border-r border-gray-200">
                       {patient.patientId}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {patient.queueNumber ? (
+                        <span className="text-xs font-medium text-admin-dark">
+                          #{patient.queueNumber} · {patient.queueStatus || "—"}
+                        </span>
+                      ) : (
+                        <span className="text-gray-300 text-xs">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">{patient.name}</td>
                     <td className="px-4 py-3 whitespace-nowrap">{patient.age}</td>
@@ -213,6 +225,7 @@ function Admin() {
                                   visit.isCurrent ? "border-admin-DEFAULT" : "border-gray-200"
                                 }`}
                               >
+
                                 <div className="flex items-center justify-between mb-1">
                                   <span className="font-medium text-admin-dark">
                                     {visit.date}
@@ -258,6 +271,9 @@ function Admin() {
           </tbody>
         </table>
       </div>
+      {emrPatientId && (
+  <EMRModal patient={patients.find((p) => p.patientId === emrPatientId)} onClose={() => setEmrPatientId(null)} />
+)}
     </DashboardLayout>
   );
 }
