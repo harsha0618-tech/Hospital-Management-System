@@ -73,6 +73,7 @@ function Admin() {
               <th className="sticky left-0 z-10 bg-admin-light px-4 py-3 font-semibold whitespace-nowrap border-r border-gray-300">
                 Patient ID
               </th>
+              <th className="px-4 py-3 font-semibold whitespace-nowrap">Queue</th>
               <th className="px-4 py-3 font-semibold whitespace-nowrap">Name</th>
               <th className="px-4 py-3 font-semibold whitespace-nowrap">Age</th>
               <th className="px-4 py-3 font-semibold whitespace-nowrap">Gender</th>
@@ -86,7 +87,7 @@ function Admin() {
               <th className="px-4 py-3 font-semibold whitespace-nowrap">Pharmacy ₹</th>
               <th className="px-4 py-3 font-semibold whitespace-nowrap">Total Bill</th>
               <th className="px-4 py-3 font-semibold whitespace-nowrap">Details</th>
-              <th className="px-4 py-3 font-semibold whitespace-nowrap">Queue</th>
+              
             </tr>
           </thead>
           <tbody>
@@ -160,7 +161,7 @@ function Admin() {
 
                   {isOpen && (
                     <tr>
-                      <td colSpan={14} className="bg-admin-light px-6 py-5">
+                      <td colSpan={15} className="bg-admin-light px-6 py-5">
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                           <div className="bg-white rounded-md p-4 border border-reception-DEFAULT">
                             <h3 className="text-reception-dark font-semibold text-sm mb-2">Reception</h3>

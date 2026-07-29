@@ -1,4 +1,4 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 const navItems = [
   { name: "Receptionist", path: "/receptionist", icon: "📋", color: "reception" },

@@ -55,12 +55,13 @@ function Pharmacy() {
         medicines: [...existingMeds, dispensedEntry],
         pharmacyTotalCost: (p.pharmacyTotalCost || 0) + dispensedEntry.cost,
       };
-      showToast("Medicine dispensed successfully!");
+     
     });
 
     setMedInput("");
     setCostInput("");
     setMedSuggestions([]);
+     showToast("Medicine dispensed successfully!");
   };
 
   const handleSelectMedicine = (patientId, medName) => {

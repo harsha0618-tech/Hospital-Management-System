@@ -43,11 +43,12 @@ function LabTechnician() {
         labReport: newReportEntry.report,
         
       };
-      showToast("Patient discharged");
+     
     });
 
     setReportInput("");
     setCostInput("");
+    showToast("Report submitted");
   };
 
   const filteredPatients = patients.filter(
