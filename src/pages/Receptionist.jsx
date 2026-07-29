@@ -8,8 +8,7 @@ import { generatePatientId } from "../data/patientIdGenerator";
 import { generateQueueNumber } from "../data/queueCounter";
 import { getTodayFormatted } from "../data/dateUtils";
 import { usePatients } from "../context/PatientContext";
-import { AuthProvider } from "./context/AuthContext";
-import ProtectedRoute from "./routes/ProtectedRoute";
+
 import { useToast } from "../context/ToastContext";
 const columns = [
   "Queue #",

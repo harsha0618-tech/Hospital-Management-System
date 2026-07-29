@@ -3,8 +3,7 @@ import DashboardLayout from "../components/DashboardLayout";
 import SearchBar from "../components/SearchBar";
 import { usePatients } from "../context/PatientContext";
 import EMRModal from "../components/EMRModal";
-import { AuthProvider } from "./context/AuthContext";
-import ProtectedRoute from "./routes/ProtectedRoute";
+
 function Admin() {
   const { patients } = usePatients();
   const [openId, setOpenId] = useState(null);

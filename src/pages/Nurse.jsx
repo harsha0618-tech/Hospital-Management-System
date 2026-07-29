@@ -4,8 +4,7 @@ import DashboardLayout from "../components/DashboardLayout";
 import SearchBar from "../components/SearchBar";
 import { getTodayFormatted } from "../data/dateUtils";
 import { usePatients } from "../context/PatientContext";
-import { AuthProvider } from "./context/AuthContext";
-import ProtectedRoute from "./routes/ProtectedRoute";
+
 import { useAuth } from "../context/AuthContext";
 const columns = ["Patient ID", "Name", "Age", "Gender", "Doctor", "Vitals & Notes"];
 

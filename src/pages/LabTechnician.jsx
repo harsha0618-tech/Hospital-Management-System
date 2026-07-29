@@ -3,8 +3,7 @@ import DataTable from "../components/DataTable";
 import DashboardLayout from "../components/DashboardLayout";
 import SearchBar from "../components/SearchBar";
 import { usePatients } from "../context/PatientContext";
-import { AuthProvider } from "./context/AuthContext";
-import ProtectedRoute from "./routes/ProtectedRoute";
+
 import { useToast } from "../context/ToastContext";
 const columns = ["Patient ID", "Name", "Age", "Gender", "Doctor", "Test Reports"];
 
