@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import doctorsList from "../data/doctorsList";
 import nursesList from "../data/nursesList";
+import { usePatients } from "../context/PatientContext";
 const roles = [
   {
     name: "Receptionist",
@@ -77,7 +78,14 @@ function Landing() {
   const { login } = useAuth();
 const [loginRole, setLoginRole] = useState(null); // { path, color, staffList }
 const [selectedStaff, setSelectedStaff] = useState("");
-
+const { patients } = usePatients();
+const [quickSearch, setQuickSearch] = useState("");
+const quickResults = quickSearch.trim().length >= 2
+  ? patients.filter(p =>
+      p.patientId.toLowerCase().includes(quickSearch.toLowerCase()) ||
+      p.name.toLowerCase().includes(quickSearch.toLowerCase())
+    ).slice(0, 5)
+  : [];
 const roleStaffMap = {
   "/doctor": doctorsList.map((d) => d.name),
   "/nurse": nursesList,
@@ -146,6 +154,25 @@ const confirmLogin = () => {
           Connecting reception, doctors, lab, pharmacy and administration —
           all from one place.
         </p>
+        <div className="relative max-w-sm mx-auto mt-5">
+  <input
+    type="text"
+    value={quickSearch}
+    onChange={(e) => setQuickSearch(e.target.value)}
+    placeholder="Quick lookup: Patient ID or Name"
+    className="w-full border border-gray-200 rounded-full px-4 py-2.5 text-sm shadow-soft focus:outline-none focus:ring-2 focus:ring-brand-DEFAULT"
+  />
+  {quickResults.length > 0 && (
+    <div className="absolute top-full left-0 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-card-hover z-10 overflow-hidden text-left">
+      {quickResults.map((p) => (
+        <div key={p.patientId} className="px-4 py-2 text-xs border-b border-gray-50 last:border-0">
+          <span className="font-medium text-brand-dark">{p.patientId}</span> — {p.name}
+          <span className="text-gray-400"> ({p.status})</span>
+        </div>
+      ))}
+    </div>
+  )}
+</div>
       </section>
 
       {/* Role cards — smaller, compact */}

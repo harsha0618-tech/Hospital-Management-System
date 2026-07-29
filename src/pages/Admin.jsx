@@ -3,6 +3,7 @@ import DashboardLayout from "../components/DashboardLayout";
 import SearchBar from "../components/SearchBar";
 import { usePatients } from "../context/PatientContext";
 import EMRModal from "../components/EMRModal";
+import { exportPatientsCsv } from "../utils/exportCsv";
 
 function Admin() {
   const { patients } = usePatients();
@@ -61,8 +62,16 @@ function Admin() {
           </div>
         ))}
       </div>
-
-      <h2 className="text-lg font-semibold text-gray-700 mb-3">All Patient Records</h2>
+ 
+      <div className="flex items-center justify-between mb-3">
+  <h2 className="text-lg font-semibold text-gray-700">All Patient Records</h2>
+  <button
+    onClick={() => exportPatientsCsv(filteredPatients)}
+    className="bg-admin-DEFAULT text-white text-xs px-4 py-2 rounded-md hover:opacity-90"
+  >
+    ⬇ Export CSV
+  </button>
+</div>
 
       <SearchBar value={searchTerm} onChange={setSearchTerm} colorClass="admin" />
 
