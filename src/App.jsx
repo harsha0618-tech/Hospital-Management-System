@@ -17,16 +17,15 @@ function App() {
     <PatientProvider>
      
         <HashRouter>
-          <Routes>
-          <Route path="/" element={<Landing />} />
-          <Route path="/receptionist" element={<Receptionist />} />
-          <Route path="/doctor" element={<Doctor />} />
-          <Route path="/nurse" element={<Nurse />} />
-          <Route path="/lab" element={<LabTechnician />} />
-          <Route path="/pharmacy" element={<Pharmacy />} />
-          <Route path="/admin" element={<Admin />} />
-          <Route path="/doctor" element={<ProtectedRoute role="doctor"><Doctor /></ProtectedRoute>} />
-        </Routes>
+         <Routes>
+  <Route path="/" element={<Landing />} />
+  <Route path="/receptionist" element={<ProtectedRoute role="receptionist"><Receptionist /></ProtectedRoute>} />
+  <Route path="/doctor" element={<ProtectedRoute role="doctor"><Doctor /></ProtectedRoute>} />
+  <Route path="/nurse" element={<ProtectedRoute role="nurse"><Nurse /></ProtectedRoute>} />
+  <Route path="/lab" element={<ProtectedRoute role="lab"><LabTechnician /></ProtectedRoute>} />
+  <Route path="/pharmacy" element={<ProtectedRoute role="pharmacy"><Pharmacy /></ProtectedRoute>} />
+  <Route path="/admin" element={<ProtectedRoute role="admin"><Admin /></ProtectedRoute>} />
+</Routes>
       </HashRouter>
      
     </PatientProvider>

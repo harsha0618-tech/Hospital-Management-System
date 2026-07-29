@@ -67,20 +67,7 @@ const activeNurse = user?.name || "";
       icon="🩹"
       colorClass="nurse"
     >
-      <div className="mb-6 flex flex-col sm:flex-row sm:items-center gap-3">
-        <label className="text-sm font-medium text-gray-600">Logged in as</label>
-        <select
-          value={activeNurse}
-          onChange={(e) => setActiveNurse(e.target.value)}
-          className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-nurse-DEFAULT w-fit"
-        >
-          {nursesList.map((n) => (
-            <option key={n} value={n}>
-              {n}
-            </option>
-          ))}
-        </select>
-      </div>
+     
 
       <SearchBar value={searchTerm} onChange={setSearchTerm} colorClass="nurse" />
 
