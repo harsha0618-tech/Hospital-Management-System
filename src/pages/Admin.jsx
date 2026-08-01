@@ -12,6 +12,67 @@ function Admin() {
   const [topMeds, setTopMeds] = useState([]);
   const [doctorLoad, setDoctorLoad] = useState([]);
 
+const [staff, setStaff] = useState([]);
+const [departments, setDepartments] = useState([]);
+const [showAddStaff, setShowAddStaff] = useState(false);
+const [staffForm, setStaffForm] = useState({
+  role: "doctor",
+  full_name: "",
+  department_id: "",
+  consultation_fee: "",
+  joining_date: "",
+  salary: "",
+});
+const [staffError, setStaffError] = useState("");
+
+const loadStaff = () => {
+  api.get("/admin/staff").then((r) => setStaff(r.data));
+};
+
+useEffect(() => {
+  loadStaff();
+  api.get("/admin/departments").then((r) => setDepartments(r.data));
+}, []);
+
+const handleAddStaff = async (e) => {
+  e.preventDefault();
+  setStaffError("");
+  try {
+    await api.post("/admin/staff", staffForm);
+    setStaffForm({
+      role: "doctor",
+      full_name: "",
+      department_id: "",
+      consultation_fee: "",
+      joining_date: "",
+      salary: "",
+    });
+    setShowAddStaff(false);
+    loadStaff();
+  } catch (err) {
+    setStaffError(err.response?.data?.error || "Could not add staff member");
+  }
+};
+
+const handleToggleStatus = async (member) => {
+  await api.put(`/admin/staff/${member.role}/${member.staff_id}/status`, {
+    is_active: !member.is_active,
+  });
+  loadStaff();
+};
+
+const handleSalaryChange = (staff_id, value) => {
+  setStaff((prev) =>
+    prev.map((m) => (m.staff_id === staff_id ? { ...m, salary: value } : m))
+  );
+};
+
+const handleSalarySave = async (member) => {
+  await api.put(`/admin/staff/${member.role}/${member.staff_id}`, {
+    salary: member.salary,
+  });
+  loadStaff();
+};
   useEffect(() => {
     api.get("/reports/revenue-by-department").then((r) => setRevenue(r.data));
     api.get("/reports/low-stock").then((r) => setLowStock(r.data));
@@ -95,7 +156,169 @@ function Admin() {
         </div>
       </div>
 
-      <h2 className="text-lg font-semibold text-gray-700 mb-3">All Patients</h2>
+      <div className="flex items-center justify-between mb-3">
+  <h2 className="text-lg font-semibold text-gray-700">Staff Management</h2>
+  <button
+    onClick={() => setShowAddStaff((v) => !v)}
+    className="bg-admin-dark text-white text-sm font-medium px-4 py-2 rounded-md hover:opacity-90"
+  >
+    {showAddStaff ? "Cancel" : "+ Recruit Staff"}
+  </button>
+</div>
+
+{showAddStaff && (
+  <form
+    onSubmit={handleAddStaff}
+    className="bg-white border border-gray-100 rounded-card shadow-soft p-5 mb-6 grid grid-cols-2 md:grid-cols-3 gap-4"
+  >
+    <div>
+      <label className="text-xs text-gray-500">Role</label>
+      <select
+        value={staffForm.role}
+        onChange={(e) => setStaffForm({ ...staffForm, role: e.target.value })}
+        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mt-1"
+      >
+        <option value="doctor">Doctor</option>
+        <option value="nurse">Nurse</option>
+      </select>
+    </div>
+
+    <div>
+      <label className="text-xs text-gray-500">Full Name</label>
+      <input
+        required
+        value={staffForm.full_name}
+        onChange={(e) => setStaffForm({ ...staffForm, full_name: e.target.value })}
+        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mt-1"
+      />
+    </div>
+
+    {staffForm.role === "doctor" && (
+      <div>
+        <label className="text-xs text-gray-500">Department</label>
+        <select
+          required
+          value={staffForm.department_id}
+          onChange={(e) => setStaffForm({ ...staffForm, department_id: e.target.value })}
+          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mt-1"
+        >
+          <option value="">Select department</option>
+          {departments.map((d) => (
+            <option key={d.department_id} value={d.department_id}>
+              {d.department_name}
+            </option>
+          ))}
+        </select>
+      </div>
+    )}
+
+    {staffForm.role === "doctor" && (
+      <div>
+        <label className="text-xs text-gray-500">Consultation Fee (₹)</label>
+        <input
+          type="number"
+          value={staffForm.consultation_fee}
+          onChange={(e) => setStaffForm({ ...staffForm, consultation_fee: e.target.value })}
+          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mt-1"
+        />
+      </div>
+    )}
+
+    <div>
+      <label className="text-xs text-gray-500">Joining Date</label>
+      <input
+        type="date"
+        required
+        value={staffForm.joining_date}
+        onChange={(e) => setStaffForm({ ...staffForm, joining_date: e.target.value })}
+        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mt-1"
+      />
+    </div>
+
+    <div>
+      <label className="text-xs text-gray-500">Salary (₹/month)</label>
+      <input
+        type="number"
+        required
+        value={staffForm.salary}
+        onChange={(e) => setStaffForm({ ...staffForm, salary: e.target.value })}
+        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mt-1"
+      />
+    </div>
+
+    {staffError && <p className="text-xs text-red-500 col-span-full">{staffError}</p>}
+
+    <div className="col-span-full flex justify-end">
+      <button type="submit" className="bg-brand-DEFAULT text-white text-sm px-5 py-2 rounded-md">
+        Save Staff Member
+      </button>
+    </div>
+  </form>
+)}
+
+<div className="bg-white border border-gray-100 rounded-card shadow-soft overflow-x-auto mb-8">
+  <table className="w-full text-sm">
+    <thead className="bg-admin-light text-admin-dark text-xs uppercase">
+      <tr>
+        <th className="px-4 py-3 text-left">Name</th>
+        <th className="px-4 py-3 text-left">Role</th>
+        <th className="px-4 py-3 text-left">Department</th>
+        <th className="px-4 py-3 text-left">Joining Date</th>
+        <th className="px-4 py-3 text-left">Salary</th>
+        <th className="px-4 py-3 text-left">Status</th>
+        <th className="px-4 py-3 text-left">Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {staff.map((m) => (
+        <tr key={`${m.role}-${m.staff_id}`} className="border-t border-gray-100">
+          <td className="px-4 py-3">{m.full_name}</td>
+          <td className="px-4 py-3 capitalize">{m.role}</td>
+          <td className="px-4 py-3">{m.department_name || "—"}</td>
+          <td className="px-4 py-3">
+            {m.joining_date ? new Date(m.joining_date).toLocaleDateString() : "—"}
+          </td>
+          <td className="px-4 py-3">
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                value={m.salary ?? ""}
+                onChange={(e) => handleSalaryChange(m.staff_id, e.target.value)}
+                className="w-24 border border-gray-300 rounded-md px-2 py-1 text-xs"
+              />
+              <button onClick={() => handleSalarySave(m)} className="text-xs text-brand-dark underline">
+                Save
+              </button>
+            </div>
+          </td>
+          <td className="px-4 py-3">
+            <span
+              className={`text-xs px-2 py-1 rounded-full ${
+                m.is_active ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"
+              }`}
+            >
+              {m.is_active ? "Active" : "Inactive"}
+            </span>
+          </td>
+          <td className="px-4 py-3">
+            <button onClick={() => handleToggleStatus(m)} className="text-xs font-medium underline text-gray-600">
+              {m.is_active ? "Mark Inactive" : "Reactivate"}
+            </button>
+          </td>
+        </tr>
+      ))}
+      {staff.length === 0 && (
+        <tr>
+          <td colSpan="7" className="px-4 py-6 text-center text-gray-400 text-xs">
+            No staff records yet.
+          </td>
+        </tr>
+      )}
+    </tbody>
+  </table>
+</div>
+
+<h2 className="text-lg font-semibold text-gray-700 mb-3">All Patients</h2>
       <SearchBar value={searchTerm} onChange={setSearchTerm} colorClass="admin" />
 
       <div className="bg-white border border-gray-100 rounded-card shadow-soft overflow-x-auto mt-4">

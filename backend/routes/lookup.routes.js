@@ -5,13 +5,14 @@ const router = express.Router();
 router.get("/doctors", async (req, res) => {
   const r = await pool.query(
     `SELECT d.doctor_id, d.full_name, dep.department_name, d.consultation_fee
-     FROM doctors d JOIN departments dep ON d.department_id = dep.department_id`
+     FROM doctors d JOIN departments dep ON d.department_id = dep.department_id
+     WHERE d.is_active = true`
   );
   res.json(r.rows);
 });
 
 router.get("/nurses", async (req, res) => {
-  res.json((await pool.query("SELECT nurse_id, full_name FROM nurses")).rows);
+  res.json((await pool.query("SELECT nurse_id, full_name FROM nurses WHERE is_active = true")).rows);
 });
 
 router.get("/medicines", async (req, res) => {
