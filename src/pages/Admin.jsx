@@ -321,30 +321,69 @@ const handleSalarySave = async (member) => {
 <h2 className="text-lg font-semibold text-gray-700 mb-3">All Patients</h2>
       <SearchBar value={searchTerm} onChange={setSearchTerm} colorClass="admin" />
 
-      <div className="bg-white border border-gray-100 rounded-card shadow-soft overflow-x-auto mt-4">
-        <table className="w-full text-sm">
-          <thead className="bg-admin-light text-admin-dark text-xs uppercase">
-            <tr>
-              <th className="px-4 py-3 text-left">Patient ID</th>
-              <th className="px-4 py-3 text-left">Name</th>
-              <th className="px-4 py-3 text-left">Doctor</th>
-              <th className="px-4 py-3 text-left">Status</th>
-              <th className="px-4 py-3 text-left">Total Bill</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredPatients.map((p) => (
-              <tr key={p.patient_id} className="border-t border-gray-100">
-                <td className="px-4 py-3">{p.patient_id}</td>
-                <td className="px-4 py-3">{p.full_name}</td>
-                <td className="px-4 py-3">{p.doctor_name}</td>
-                <td className="px-4 py-3">{p.status}</td>
-                <td className="px-4 py-3">₹{p.total_amount || 0}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+    <div className="bg-white border border-gray-100 rounded-card shadow-soft overflow-x-auto mt-4">
+  <table className="w-full text-sm">
+    <thead className="bg-admin-light text-admin-dark text-xs uppercase">
+      <tr>
+        <th className="px-4 py-3 text-left">Patient ID</th>
+        <th className="px-4 py-3 text-left">Name</th>
+        <th className="px-4 py-3 text-left">Age</th>
+        <th className="px-4 py-3 text-left">Gender</th>
+        <th className="px-4 py-3 text-left">Department</th>
+        <th className="px-4 py-3 text-left">Doctor</th>
+        <th className="px-4 py-3 text-left">Nurse</th>
+        <th className="px-4 py-3 text-left">Visit Date</th>
+        <th className="px-4 py-3 text-left">Diagnosis</th>
+        <th className="px-4 py-3 text-left">Consultation</th>
+        <th className="px-4 py-3 text-left">Lab</th>
+        <th className="px-4 py-3 text-left">Pharmacy</th>
+        <th className="px-4 py-3 text-left">Total Bill</th>
+        <th className="px-4 py-3 text-left">Payment</th>
+        <th className="px-4 py-3 text-left">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {filteredPatients.map((p) => (
+        <tr key={p.patient_id} className="border-t border-gray-100">
+          <td className="px-4 py-3">{p.patient_id}</td>
+          <td className="px-4 py-3">{p.full_name}</td>
+          <td className="px-4 py-3">{p.age ?? "—"}</td>
+          <td className="px-4 py-3">{p.gender ?? "—"}</td>
+          <td className="px-4 py-3">{p.department_name ?? "—"}</td>
+          <td className="px-4 py-3">{p.doctor_name ?? "—"}</td>
+          <td className="px-4 py-3">{p.nurse_name ?? "—"}</td>
+          <td className="px-4 py-3">
+            {p.visit_date ? new Date(p.visit_date).toLocaleDateString() : "—"}
+          </td>
+          <td className="px-4 py-3">{p.diagnosis ?? "—"}</td>
+          <td className="px-4 py-3">₹{p.consultation_fee ?? 0}</td>
+          <td className="px-4 py-3">₹{p.lab_total ?? 0}</td>
+          <td className="px-4 py-3">₹{p.pharmacy_total ?? 0}</td>
+          <td className="px-4 py-3 font-medium">₹{p.total_amount ?? 0}</td>
+          <td className="px-4 py-3">
+            <span
+              className={`text-xs px-2 py-1 rounded-full ${
+                p.payment_status === "Paid"
+                  ? "bg-green-100 text-green-700"
+                  : "bg-yellow-100 text-yellow-700"
+              }`}
+            >
+              {p.payment_status ?? "Pending"}
+            </span>
+          </td>
+          <td className="px-4 py-3">{p.status}</td>
+        </tr>
+      ))}
+      {filteredPatients.length === 0 && (
+        <tr>
+          <td colSpan="15" className="px-4 py-6 text-center text-gray-400 text-xs">
+            No patients found.
+          </td>
+        </tr>
+      )}
+    </tbody>
+  </table>
+</div>
     </DashboardLayout>
   );
 }
