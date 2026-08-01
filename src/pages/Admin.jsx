@@ -203,6 +203,12 @@ const handleSalarySave = async (member) => {
           className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mt-1"
         >
           <option value="">Select department</option>
+                  <option value="cardiology">Cardiology</option>
+        <option value="Orthopedics">Orthopedics</option>
+                <option value="General Surgery">General Surgery</option>
+        <option value="Dermatology">Dermatology</option>
+                <option value="ENT">ENT</option>
+        <option value="Neurology">Neurology</option>
           {departments.map((d) => (
             <option key={d.department_id} value={d.department_id}>
               {d.department_name}
