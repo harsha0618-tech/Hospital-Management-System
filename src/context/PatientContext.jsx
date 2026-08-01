@@ -1,41 +1,31 @@
-import { createContext, useContext, useState } from "react";
-import mockPatients from "../data/mockPatients";
+import { createContext, useContext, useState, useEffect, useCallback } from "react";
+import api from "../api/axios";
 
 const PatientContext = createContext(null);
 
 export function PatientProvider({ children }) {
-  const [patients, setPatients] = useState(mockPatients);
+  const [patients, setPatients] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const addPatient = (newPatient) => {
-    setPatients((prev) => [...prev, newPatient]);
+  const fetchPatients = useCallback(async () => {
+    setLoading(true);
+    const { data } = await api.get("/patients");
+    setPatients(data);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetchPatients(); }, [fetchPatients]);
+
+  const addPatient = async (newPatient) => {
+    const { data } = await api.post("/patients", newPatient);
+    await fetchPatients();
+    return data;
   };
 
-  const updatePatient = (patientId, updates) => {
-    setPatients((prev) =>
-      prev.map((p) =>
-        p.patientId === patientId
-          ? {
-              ...p,
-              ...(typeof updates === "function" ? updates(p) : updates),
-            }
-          : p
-      )
-    );
-  };
-
-  const getPatient = (patientId) =>
-    patients.find((p) => p.patientId === patientId);
-
-  const value = {
-    patients,
-    setPatients,
-    addPatient,
-    updatePatient,
-    getPatient,
-  };
+  const getPatient = async (patientId) => (await api.get(`/patients/${patientId}`)).data;
 
   return (
-    <PatientContext.Provider value={value}>
+    <PatientContext.Provider value={{ patients, loading, addPatient, getPatient, refresh: fetchPatients }}>
       {children}
     </PatientContext.Provider>
   );
@@ -43,8 +33,6 @@ export function PatientProvider({ children }) {
 
 export function usePatients() {
   const ctx = useContext(PatientContext);
-  if (!ctx) {
-    throw new Error("usePatients must be used within a PatientProvider");
-  }
+  if (!ctx) throw new Error("usePatients must be used within a PatientProvider");
   return ctx;
 }

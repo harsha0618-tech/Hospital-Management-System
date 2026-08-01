@@ -22,8 +22,8 @@ function App() {
   <Route path="/receptionist" element={<ProtectedRoute role="receptionist"><Receptionist /></ProtectedRoute>} />
   <Route path="/doctor" element={<ProtectedRoute role="doctor"><Doctor /></ProtectedRoute>} />
   <Route path="/nurse" element={<ProtectedRoute role="nurse"><Nurse /></ProtectedRoute>} />
-  <Route path="/lab" element={<ProtectedRoute role="lab"><LabTechnician /></ProtectedRoute>} />
-  <Route path="/pharmacy" element={<ProtectedRoute role="pharmacy"><Pharmacy /></ProtectedRoute>} />
+ <Route path="/lab" element={<ProtectedRoute role="labtech"><LabTechnician /></ProtectedRoute>} />
+  <Route path="/pharmacy" element={<ProtectedRoute role="pharmacist"><Pharmacy /></ProtectedRoute>} />
   <Route path="/admin" element={<ProtectedRoute role="admin"><Admin /></ProtectedRoute>} />
 </Routes>
       </HashRouter>

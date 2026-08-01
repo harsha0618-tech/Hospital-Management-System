@@ -1,0 +1,27 @@
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+import authRoutes from "./routes/auth.routes.js";
+import patientRoutes from "./routes/patients.routes.js";
+import visitRoutes from "./routes/visits.routes.js";
+import labRoutes from "./routes/lab.routes.js";
+import pharmacyRoutes from "./routes/pharmacy.routes.js";
+import reportRoutes from "./routes/reports.routes.js";
+import lookupRoutes from "./routes/lookup.routes.js";
+import nurseRoutes from "./routes/nurse.routes.js";
+dotenv.config();
+const app = express();
+app.use(cors());
+app.use(express.json());
+app.use("/api/nurse", nurseRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/patients", patientRoutes);
+app.use("/api/visits", visitRoutes);
+app.use("/api/lab", labRoutes);
+app.use("/api/pharmacy", pharmacyRoutes);
+app.use("/api/reports", reportRoutes);
+app.use("/api/lookup", lookupRoutes);
+app.get("/", (req, res) => res.json({ status: "HMS API running" }));
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
