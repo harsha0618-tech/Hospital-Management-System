@@ -6,9 +6,8 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
 
-// No password for now - just pick a role and log straight in.
-  const login = async (role) => {
-    const { data } = await api.post("/auth/login", { role });
+  const login = async (username, password) => {
+    const { data } = await api.post("/auth/login", { username, password });
     localStorage.setItem("hms_token", data.token);
     const userData = { role: data.role, name: data.full_name, staffId: data.staff_id };
     setUser(userData);

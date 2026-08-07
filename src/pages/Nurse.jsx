@@ -44,7 +44,7 @@ function Nurse() {
     await loadVitals(patient.visit_id);
   };
 
-  const nursePatients = patients.filter((p) => p.nurse_name === user?.name);
+  const nursePatients = patients.filter((p) => p.nurse_id === user?.staffId);
   const filteredPatients = nursePatients.filter(
     (p) =>
       p.patient_id.toLowerCase().includes(searchTerm.toLowerCase()) ||

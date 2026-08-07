@@ -48,22 +48,23 @@ function Landing() {
           .slice(0, 5)
       : [];
 
- const handleRoleLogin = async (role) => {
-  setError("");
-  setLoggingIn(role);
+const [selectedRole, setSelectedRole] = useState(null); // which tile is showing the login form
+const [loginUsername, setLoginUsername] = useState("");
+const [loginPassword, setLoginPassword] = useState("");
 
+const handleRoleLogin = async (e) => {
+  e.preventDefault();
+  setError("");
+  setLoggingIn(selectedRole);
   try {
-    const data = await login(role);
+    const data = await login(loginUsername, loginPassword);
     navigate(roleToPath[data.role] || "/");
-  } catch {
-    setError(
-      "Could not log in as this role. Make sure the backend and seeded users are set up."
-    );
+  } catch (err) {
+    setError(err.response?.data?.error || "Invalid username or password.");
   } finally {
     setLoggingIn(null);
   }
 };
-
   return (
     <div className="min-h-screen relative overflow-hidden">
       <div className="absolute -top-24 -left-24 w-96 h-96 bg-brand-light rounded-full blur-3xl opacity-60 -z-10"></div>
@@ -126,13 +127,13 @@ function Landing() {
           SELECT YOUR ROLE TO CONTINUE
         </p>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-5">
-          {roles.map((role) => (
-            <button
-              key={role.name}
-            onClick={() => handleRoleLogin(role.role)}
-disabled={loggingIn !== null}
-className="group bg-white border border-gray-100 rounded-card shadow-soft p-6 flex flex-col items-center text-center transition-all duration-200 hover:-translate-y-1 hover:shadow-card-hover cursor-pointer disabled:opacity-50 disabled:cursor-wait"
-            >
+         {roles.map((role) => (
+  <button
+    key={role.name}
+    onClick={() => { setSelectedRole(role.role); setError(""); setLoginUsername(""); setLoginPassword(""); }}
+    disabled={loggingIn !== null}
+    className="group bg-white border border-gray-100 rounded-card shadow-soft p-6 flex flex-col items-center text-center transition-all duration-200 hover:-translate-y-1 hover:shadow-card-hover cursor-pointer disabled:opacity-50 disabled:cursor-wait"
+  >
               <span className={`w-16 h-16 rounded-2xl bg-${role.color}-light flex items-center justify-center text-3xl mb-3 group-hover:scale-110 transition-transform`}>
                 {role.icon}
               </span>
@@ -143,6 +144,36 @@ className="group bg-white border border-gray-100 rounded-card shadow-soft p-6 fl
             </button>
           ))}
         </div>
+        {selectedRole && (
+  <form
+    onSubmit={handleRoleLogin}
+    className="max-w-sm mx-auto mt-6 bg-white border border-gray-100 rounded-card shadow-card-hover p-6"
+  >
+    <p className="text-xs font-semibold text-gray-500 mb-3">
+      Logging in as {roles.find((r) => r.role === selectedRole)?.name}
+    </p>
+    <input
+      type="text" placeholder="Username" required autoFocus
+      value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)}
+      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mb-3"
+    />
+    <input
+      type="password" placeholder="Password" required
+      value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)}
+      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mb-3"
+    />
+    <div className="flex gap-2">
+      <button type="button" onClick={() => setSelectedRole(null)}
+        className="flex-1 border border-gray-200 text-gray-500 text-sm rounded-md py-2">
+        Cancel
+      </button>
+      <button type="submit" disabled={loggingIn !== null}
+        className="flex-1 bg-brand-DEFAULT text-white text-sm rounded-md py-2 disabled:opacity-50">
+        {loggingIn ? "Logging in..." : "Log In"}
+      </button>
+    </div>
+  </form>
+)}
       </section>
 
       <section className="bg-white border-t border-gray-100 py-16 px-6">

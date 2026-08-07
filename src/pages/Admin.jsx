@@ -5,7 +5,7 @@ import { usePatients } from "../context/PatientContext";
 import api from "../api/axios";
 
 function Admin() {
-  const { patients } = usePatients();
+ const { patients, refresh } = usePatients();
   const [searchTerm, setSearchTerm] = useState("");
   const [revenue, setRevenue] = useState([]);
   const [lowStock, setLowStock] = useState([]);
@@ -24,13 +24,38 @@ const [staffForm, setStaffForm] = useState({
   salary: "",
 });
 const [staffError, setStaffError] = useState("");
+const [newCredentials, setNewCredentials] = useState(null); // { username, temp_password, full_name }
 
 const loadStaff = () => {
   api.get("/admin/staff").then((r) => setStaff(r.data));
 };
 
+const [auditLog, setAuditLog] = useState([]);
+const loadAuditLog = () => {
+  api.get("/admin/audit-log").then((r) => setAuditLog(r.data));
+};
+
+const handleMarkPaid = async (patient) => {
+  await api.put(`/admin/billing/${patient.visit_id}/payment`, { payment_status: "Paid" });
+  await Promise.all([refresh(), loadAuditLog()]);
+};
+
 useEffect(() => {
   loadStaff();
+  loadAuditLog();
+  api.get("/admin/departments").then((r) => setDepartments(r.data));
+}, []);
+// `patients` here comes from usePatients() at the top of the component,
+// which already has a refresh() method — call it after a payment update
+// so the table reflects the new status immediately.
+async function refreshPatientsIfAny() {
+  // usePatients() already exposes this; if you destructured it as `refresh`
+  // above, just call refresh() directly here instead of this wrapper.
+}
+
+useEffect(() => {
+  loadStaff();
+  loadAuditLog();
   api.get("/admin/departments").then((r) => setDepartments(r.data));
 }, []);
 
@@ -38,7 +63,12 @@ const handleAddStaff = async (e) => {
   e.preventDefault();
   setStaffError("");
   try {
-    await api.post("/admin/staff", staffForm);
+    const { data } = await api.post("/admin/staff", staffForm);
+    setNewCredentials({
+      full_name: staffForm.full_name,
+      username: data.username,
+      temp_password: data.temp_password,
+    });
     setStaffForm({
       role: "doctor",
       full_name: "",
@@ -53,7 +83,6 @@ const handleAddStaff = async (e) => {
     setStaffError(err.response?.data?.error || "Could not add staff member");
   }
 };
-
 const handleToggleStatus = async (member) => {
   await api.put(`/admin/staff/${member.role}/${member.staff_id}/status`, {
     is_active: !member.is_active,
@@ -196,19 +225,13 @@ const handleSalarySave = async (member) => {
     {staffForm.role === "doctor" && (
       <div>
         <label className="text-xs text-gray-500">Department</label>
-        <select
+       <select
           required
           value={staffForm.department_id}
           onChange={(e) => setStaffForm({ ...staffForm, department_id: e.target.value })}
           className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mt-1"
         >
           <option value="">Select department</option>
-                  <option value="cardiology">Cardiology</option>
-        <option value="Orthopedics">Orthopedics</option>
-                <option value="General Surgery">General Surgery</option>
-        <option value="Dermatology">Dermatology</option>
-                <option value="ENT">ENT</option>
-        <option value="Neurology">Neurology</option>
           {departments.map((d) => (
             <option key={d.department_id} value={d.department_id}>
               {d.department_name}
@@ -366,16 +389,26 @@ const handleSalarySave = async (member) => {
           <td className="px-4 py-3">₹{p.lab_total ?? 0}</td>
           <td className="px-4 py-3">₹{p.pharmacy_total ?? 0}</td>
           <td className="px-4 py-3 font-medium">₹{p.total_amount ?? 0}</td>
-          <td className="px-4 py-3">
-            <span
-              className={`text-xs px-2 py-1 rounded-full ${
-                p.payment_status === "Paid"
-                  ? "bg-green-100 text-green-700"
-                  : "bg-yellow-100 text-yellow-700"
-              }`}
-            >
-              {p.payment_status ?? "Pending"}
-            </span>
+        <td className="px-4 py-3">
+            <div className="flex flex-col items-start gap-1">
+              <span
+                className={`text-xs px-2 py-1 rounded-full ${
+                  p.payment_status === "Paid"
+                    ? "bg-green-100 text-green-700"
+                    : "bg-yellow-100 text-yellow-700"
+                }`}
+              >
+                {p.payment_status ?? "Pending"}
+              </span>
+              {p.payment_status !== "Paid" && p.total_amount ? (
+                <button
+                  onClick={() => handleMarkPaid(p)}
+                  className="text-[11px] text-brand-dark underline"
+                >
+                  Mark Payment Done
+                </button>
+              ) : null}
+            </div>
           </td>
           <td className="px-4 py-3">{p.status}</td>
         </tr>
@@ -386,6 +419,54 @@ const handleSalarySave = async (member) => {
             No patients found.
           </td>
         </tr>
+      )}
+    </tbody>
+  </table>
+</div>
+{newCredentials && (
+  <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+    <div className="bg-white rounded-card shadow-card-hover max-w-sm w-full p-6">
+      <h3 className="text-sm font-semibold text-gray-700 mb-2">Staff account created</h3>
+      <p className="text-xs text-gray-500 mb-4">
+        Share these login details with {newCredentials.full_name}. This password is shown only once.
+      </p>
+      <div className="bg-gray-50 rounded-md p-3 text-sm mb-4 space-y-1">
+        <p><span className="text-gray-400">Username:</span> <strong>{newCredentials.username}</strong></p>
+        <p><span className="text-gray-400">Password:</span> <strong>{newCredentials.temp_password}</strong></p>
+      </div>
+      <button
+        onClick={() => setNewCredentials(null)}
+        className="w-full bg-admin-dark text-white text-sm rounded-md py-2"
+      >
+        Done
+      </button>
+    </div>
+  </div>
+)}
+<h2 className="text-lg font-semibold text-gray-700 mb-3 mt-8">Activity Log</h2>
+<div className="bg-white border border-gray-100 rounded-card shadow-soft overflow-x-auto mb-8">
+  <table className="w-full text-sm">
+    <thead className="bg-admin-light text-admin-dark text-xs uppercase">
+      <tr>
+        <th className="px-4 py-3 text-left">Time</th>
+        <th className="px-4 py-3 text-left">Action</th>
+        <th className="px-4 py-3 text-left">Details</th>
+        <th className="px-4 py-3 text-left">By</th>
+      </tr>
+    </thead>
+    <tbody>
+      {auditLog.map((log) => (
+        <tr key={log.log_id} className="border-t border-gray-100">
+          <td className="px-4 py-3 text-xs whitespace-nowrap">
+            {new Date(log.created_at).toLocaleString()}
+          </td>
+          <td className="px-4 py-3 text-xs capitalize">{log.action.replaceAll("_", " ")}</td>
+          <td className="px-4 py-3 text-xs">{log.details}</td>
+          <td className="px-4 py-3 text-xs">{log.performed_by}</td>
+        </tr>
+      ))}
+      {auditLog.length === 0 && (
+        <tr><td colSpan="4" className="px-4 py-6 text-center text-gray-400 text-xs">No activity yet.</td></tr>
       )}
     </tbody>
   </table>

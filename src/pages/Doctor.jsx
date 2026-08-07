@@ -5,12 +5,14 @@ import SearchBar from "../components/SearchBar";
 import { usePatients } from "../context/PatientContext";
 import { useLookups } from "../hooks/useLookups";
 import { useToast } from "../context/ToastContext";
+import { useAuth } from "../context/AuthContext";
 import api from "../api/axios";
 
 const columns = ["Patient ID", "Name", "Age", "Gender", "Diagnosis & Treatment"];
 
 function Doctor() {
   const { patients, refresh, getPatient } = usePatients();
+    const { user } = useAuth();
   const { tests, medicines } = useLookups();
   const [openId, setOpenId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -61,16 +63,17 @@ function Doctor() {
     }
   };
 
-  const filteredPatients = patients.filter(
+ const myPatients = patients.filter((p) => p.doctor_id === user?.staffId);
+
+  const filteredPatients = myPatients.filter(
     (p) =>
       p.patient_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       p.full_name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const waitingQueue = patients
+  const waitingQueue = myPatients
     .filter((p) => p.status === "Admitted" && !p.diagnosis)
     .sort((a, b) => (a.queue_number || 0) - (b.queue_number || 0));
-
   return (
     <DashboardLayout title="Doctor Dashboard" subtitle="Diagnose, recommend tests & prescribe" icon="🩺" colorClass="doctor">
       {waitingQueue.length > 0 && (
