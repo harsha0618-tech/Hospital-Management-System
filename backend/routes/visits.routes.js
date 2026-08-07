@@ -1,6 +1,9 @@
 import express from "express";
 import { pool } from "../db.js";
+import { verifyToken } from "../middleware/auth.middleware.js";
 const router = express.Router();
+
+router.use(verifyToken);
 
 router.post("/", async (req, res) => {
   const { patient_id, doctor_id, nurse_id } = req.body;
@@ -42,11 +45,25 @@ router.put("/:id/consult", async (req, res) => {
 
 router.put("/:id/discharge", async (req, res) => {
   const { id } = req.params;
+  const client = await pool.connect();
   try {
-    await pool.query("CALL finalize_billing($1)", [id]);
-    await pool.query("SELECT discharge_patient($1)", [id]);
+    await client.query("BEGIN");
+    await client.query("CALL finalize_billing($1)", [id]);
+    await client.query(
+      "UPDATE visits SET status = 'Discharged', discharged_at = NOW() WHERE visit_id = $1",
+      [id]
+    );
+    await client.query(
+      `INSERT INTO audit_log(action, entity_type, entity_id, performed_by, details)
+       VALUES ('patient_discharged','visit',$1,$2,$3)`,
+      [id, req.user?.full_name || "Unknown", `Visit #${id} discharged and billed`]
+    );
+    await client.query("COMMIT");
     res.json({ message: "Patient discharged and billed" });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    await client.query("ROLLBACK");
+    res.status(500).json({ error: err.message });
+  } finally { client.release(); }
 });
 
 export default router;
