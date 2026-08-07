@@ -1,0 +1,3490 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+backend/
+  middleware/
+    auth.middleware.js
+  routes/
+    admin.routes.js
+    auth.routes.js
+    lab.routes.js
+    lookup.routes.js
+    nurse.routes.js
+    patients.routes.js
+    pharmacy.routes.js
+    reports.routes.js
+    visits.routes.js
+  db.js
+  package.json
+  seed_users.js
+  server.js
+db/
+  logic.sql
+  queries.sql
+  schema.sql
+  seed.sql
+public/
+  favicon.svg
+  icons.svg
+src/
+  api/
+    axios.js
+  assets/
+    hero.png
+    react.svg
+    vite.svg
+  components/
+    DashboardLayout.jsx
+    DataTable.jsx
+    EMRModal.jsx
+    SearchBar.jsx
+  context/
+    AuthContext.jsx
+    PatientContext.jsx
+    ToastContext.jsx
+  data/
+    dateUtils.js
+  hooks/
+    useLookups.js
+  pages/
+    Admin.jsx
+    Doctor.jsx
+    LabTechnician.jsx
+    Landing.jsx
+    Nurse.jsx
+    Pharmacy.jsx
+    Receptionist.jsx
+  routes/
+    ProtectedRoute.jsx
+  utils/
+    exportCsv.js
+  App.css
+  App.jsx
+  index.css
+  main.jsx
+.gitignore
+eslint.config.js
+index.html
+package.json
+README.md
+tailwind.config.js
+vite.config.js
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="backend/middleware/auth.middleware.js">
+import jwt from "jsonwebtoken";
+
+export function verifyToken(req, res, next) {
+  const header = req.headers["authorization"];
+  const token = header && header.split(" ")[1];
+  if (!token) return res.status(401).json({ error: "No token provided" });
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (err) return res.status(403).json({ error: "Invalid token" });
+    req.user = decoded;
+    next();
+  });
+}
+
+export function requireRole(...roles) {
+  return (req, res, next) => {
+    if (!roles.includes(req.user.role)) return res.status(403).json({ error: "Access denied" });
+    next();
+  };
+}
+</file>
+
+<file path="backend/routes/lab.routes.js">
+import express from "express";
+import { pool } from "../db.js";
+const router = express.Router();
+
+router.get("/pending", async (req, res) => {
+  const r = await pool.query(`
+    SELECT vt.visit_id, t.test_id, t.test_name, p.full_name AS patient_name
+    FROM visit_tests vt
+    JOIN tests t ON vt.test_id = t.test_id
+    JOIN visits v ON vt.visit_id = v.visit_id
+    JOIN patients p ON v.patient_id = p.patient_id
+    LEFT JOIN lab_reports lr ON lr.visit_id = vt.visit_id AND lr.test_id = vt.test_id
+    WHERE lr.report_id IS NULL
+  `);
+  res.json(r.rows);
+});
+
+router.post("/report", async (req, res) => {
+  const { visit_id, test_id, report_text, cost } = req.body;
+  try {
+    const r = await pool.query(
+      `INSERT INTO lab_reports(visit_id, test_id, report_text, cost) VALUES ($1,$2,$3,$4) RETURNING *`,
+      [visit_id, test_id, report_text, cost]
+    );
+    res.status(201).json(r.rows[0]);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+export default router;
+</file>
+
+<file path="backend/routes/nurse.routes.js">
+import express from "express";
+import { pool } from "../db.js";
+const router = express.Router();
+
+router.get("/vitals/:visitId", async (req, res) => {
+  const r = await pool.query(
+    "SELECT * FROM vitals WHERE visit_id = $1 ORDER BY recorded_at DESC",
+    [req.params.visitId]
+  );
+  res.json(r.rows);
+});
+
+router.post("/vitals", async (req, res) => {
+  const { visit_id, nurse_id, bp, temperature, pulse, notes } = req.body;
+  try {
+    const r = await pool.query(
+      `INSERT INTO vitals(visit_id, nurse_id, bp, temperature, pulse, notes)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [visit_id, nurse_id, bp, temperature, pulse, notes]
+    );
+    res.status(201).json(r.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+export default router;
+</file>
+
+<file path="backend/routes/patients.routes.js">
+import express from "express";
+import { pool } from "../db.js";
+const router = express.Router();
+
+router.get("/", async (req, res) => {
+  const r = await pool.query(
+    `SELECT DISTINCT ON (patient_id) * FROM patient_full_summary
+     ORDER BY patient_id, visit_id DESC`
+  );
+  res.json(r.rows);
+});
+
+router.get("/:id", async (req, res) => {
+  const { id } = req.params;
+  const patient = await pool.query("SELECT * FROM patients WHERE patient_id = $1", [id]);
+  if (patient.rows.length === 0) return res.status(404).json({ error: "Patient not found" });
+  const visits = await pool.query(
+    "SELECT * FROM patient_full_summary WHERE patient_id = $1 ORDER BY visit_date DESC", [id]
+  );
+  res.json({ ...patient.rows[0], visits: visits.rows });
+});
+
+router.post("/", async (req, res) => {
+  const { full_name, age, gender, phone } = req.body;
+  try {
+    const r = await pool.query(
+      `INSERT INTO patients(full_name, age, gender, phone) VALUES ($1,$2,$3,$4) RETURNING *`,
+      [full_name, age, gender, phone]
+    );
+    res.status(201).json(r.rows[0]);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+export default router;
+</file>
+
+<file path="backend/routes/pharmacy.routes.js">
+import express from "express";
+import { pool } from "../db.js";
+const router = express.Router();
+
+router.get("/pending", async (req, res) => {
+  const r = await pool.query(`
+    SELECT pr.prescription_id, pr.visit_id, m.medicine_name, pr.quantity, p.full_name AS patient_name
+    FROM prescriptions pr
+    JOIN medicines m ON pr.medicine_id = m.medicine_id
+    JOIN visits v ON pr.visit_id = v.visit_id
+    JOIN patients p ON v.patient_id = p.patient_id
+    WHERE pr.dispensed = FALSE
+  `);
+  res.json(r.rows);
+});
+
+router.put("/:id/dispense", async (req, res) => {
+  const r = await pool.query(
+    `UPDATE prescriptions SET dispensed = TRUE WHERE prescription_id = $1 RETURNING *`,
+    [req.params.id]
+  );
+  res.json(r.rows[0]);
+});
+
+router.get("/stock", async (req, res) => {
+  res.json((await pool.query("SELECT * FROM medicines ORDER BY stock_qty ASC")).rows);
+});
+
+export default router;
+</file>
+
+<file path="backend/routes/reports.routes.js">
+import express from "express";
+import { pool } from "../db.js";
+const router = express.Router();
+
+router.get("/revenue-by-department", async (req, res) => {
+  res.json((await pool.query("SELECT * FROM revenue_by_department")).rows);
+});
+
+router.get("/low-stock", async (req, res) => {
+  res.json((await pool.query("SELECT * FROM low_stock_medicines")).rows);
+});
+
+router.get("/top-medicines", async (req, res) => {
+  const r = await pool.query(`
+    SELECT m.medicine_name, SUM(pr.quantity) AS total_prescribed
+    FROM prescriptions pr JOIN medicines m ON pr.medicine_id = m.medicine_id
+    GROUP BY m.medicine_name ORDER BY total_prescribed DESC LIMIT 5
+  `);
+  res.json(r.rows);
+});
+
+router.get("/doctor-load", async (req, res) => {
+  const r = await pool.query(`
+    SELECT d.full_name, COUNT(v.visit_id) AS total_patients
+    FROM doctors d LEFT JOIN visits v ON v.doctor_id = d.doctor_id
+    GROUP BY d.full_name ORDER BY total_patients DESC
+  `);
+  res.json(r.rows);
+});
+
+export default router;
+</file>
+
+<file path="backend/package.json">
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "seed_users.js",
+  "type": "module",
+  
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "seed:users": "node seed_users.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.22.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
+</file>
+
+<file path="backend/seed_users.js">
+import bcrypt from "bcrypt";
+import { pool } from "./db.js";
+
+const users = [
+  { username: "admin", password: "admin123", role: "admin", full_name: "System Admin" },
+  { username: "anita.rao", password: "doctor123", role: "doctor", full_name: "Dr. Anita Rao" },
+  { username: "lakshmi", password: "nurse123", role: "nurse", full_name: "Nurse Lakshmi" },
+  { username: "reception1", password: "recep123", role: "receptionist", full_name: "Reception Desk" },
+  { username: "pharm1", password: "pharm123", role: "pharmacist", full_name: "Pharmacy Desk" },
+  { username: "lab1", password: "lab123", role: "labtech", full_name: "Lab Desk" },
+];
+
+const run = async () => {
+  for (const u of users) {
+    const hash = await bcrypt.hash(u.password, 10);
+    await pool.query(
+      `INSERT INTO users(username, password_hash, role, full_name)
+       VALUES ($1,$2,$3,$4) ON CONFLICT (username) DO NOTHING`,
+      [u.username, hash, u.role, u.full_name]
+    );
+  }
+
+  // Link a doctor row + nurse row to real user_ids so FKs work
+  const doctorUser = await pool.query("SELECT user_id FROM users WHERE username='anita.rao'");
+  const cardio = await pool.query("SELECT department_id FROM departments WHERE department_name='Cardiology'");
+  await pool.query(
+    `INSERT INTO doctors(user_id, full_name, department_id, consultation_fee)
+     VALUES ($1,'Dr. Anita Rao',$2,500) ON CONFLICT DO NOTHING`,
+    [doctorUser.rows[0].user_id, cardio.rows[0].department_id]
+  );
+
+  const nurseUser = await pool.query("SELECT user_id FROM users WHERE username='lakshmi'");
+  await pool.query(
+    `INSERT INTO nurses(user_id, full_name) VALUES ($1,'Nurse Lakshmi') ON CONFLICT DO NOTHING`,
+    [nurseUser.rows[0].user_id]
+  );
+
+  console.log("Users + linked staff seeded.");
+  process.exit();
+};
+
+run();
+</file>
+
+<file path="db/logic.sql">
+-- Auto-generate patient_id like MCR260001 (replaces your patientIdGenerator.js, now done in DB)
+CREATE OR REPLACE FUNCTION generate_patient_id() RETURNS TRIGGER AS $$
+DECLARE
+  yr VARCHAR(2) := to_char(CURRENT_DATE, 'YY');
+  next_num INT;
+BEGIN
+  INSERT INTO patient_id_counters(year_code, last_number)
+  VALUES (yr, 1)
+  ON CONFLICT (year_code) DO UPDATE SET last_number = patient_id_counters.last_number + 1
+  RETURNING last_number INTO next_num;
+
+  NEW.patient_id := 'MCR' || yr || LPAD(next_num::TEXT, 4, '0');
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_generate_patient_id
+BEFORE INSERT ON patients
+FOR EACH ROW WHEN (NEW.patient_id IS NULL)
+EXECUTE FUNCTION generate_patient_id();
+
+-- Auto-generate daily queue number (replaces queueCounter.js)
+CREATE OR REPLACE FUNCTION generate_queue_number() RETURNS TRIGGER AS $$
+DECLARE next_num INT;
+BEGIN
+  INSERT INTO queue_counters(visit_date, last_number)
+  VALUES (NEW.visit_date, 1)
+  ON CONFLICT (visit_date) DO UPDATE SET last_number = queue_counters.last_number + 1
+  RETURNING last_number INTO next_num;
+  NEW.queue_number := next_num;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_generate_queue_number
+BEFORE INSERT ON visits
+FOR EACH ROW EXECUTE FUNCTION generate_queue_number();
+
+-- Auto reduce medicine stock the moment a prescription is created
+CREATE OR REPLACE FUNCTION reduce_stock() RETURNS TRIGGER AS $$
+BEGIN
+  UPDATE medicines SET stock_qty = stock_qty - NEW.quantity WHERE medicine_id = NEW.medicine_id;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_reduce_stock
+AFTER INSERT ON prescriptions
+FOR EACH ROW EXECUTE FUNCTION reduce_stock();
+
+-- VIEW: flattened patient record (recreates what your UI needs, via JOINs)
+CREATE VIEW patient_full_summary AS
+SELECT
+  p.patient_id, p.full_name, p.age, p.gender,
+  v.visit_id, v.visit_date, v.status, v.diagnosis,
+  d.full_name AS doctor_name, dep.department_name,
+  n.full_name AS nurse_name,
+  b.consultation_fee, b.lab_total, b.pharmacy_total, b.total_amount, b.payment_status
+FROM patients p
+JOIN visits v ON v.patient_id = p.patient_id
+LEFT JOIN doctors d ON v.doctor_id = d.doctor_id
+LEFT JOIN departments dep ON d.department_id = dep.department_id
+LEFT JOIN nurses n ON v.nurse_id = n.nurse_id
+LEFT JOIN billing b ON b.visit_id = v.visit_id;
+
+-- VIEW: revenue per department (for Admin dashboard)
+CREATE VIEW revenue_by_department AS
+SELECT dep.department_name, SUM(b.total_amount) AS total_revenue, COUNT(v.visit_id) AS visit_count
+FROM visits v
+JOIN doctors d ON v.doctor_id = d.doctor_id
+JOIN departments dep ON d.department_id = dep.department_id
+JOIN billing b ON b.visit_id = v.visit_id
+GROUP BY dep.department_name
+ORDER BY total_revenue DESC;
+
+-- VIEW: low stock alert (for Pharmacy dashboard)
+CREATE VIEW low_stock_medicines AS
+SELECT medicine_id, medicine_name, stock_qty FROM medicines WHERE stock_qty < 20;
+
+-- FUNCTION: discharge a patient
+CREATE OR REPLACE FUNCTION discharge_patient(p_visit_id INT) RETURNS VOID AS $$
+BEGIN
+  UPDATE visits SET status = 'Discharged' WHERE visit_id = p_visit_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- PROCEDURE: compute and store the final bill for a visit
+CREATE OR REPLACE PROCEDURE finalize_billing(p_visit_id INT) AS $$
+DECLARE
+  v_consult NUMERIC(10,2);
+  v_lab NUMERIC(10,2);
+  v_pharma NUMERIC(10,2);
+BEGIN
+  SELECT d.consultation_fee INTO v_consult
+  FROM visits v JOIN doctors d ON v.doctor_id = d.doctor_id
+  WHERE v.visit_id = p_visit_id;
+
+  SELECT COALESCE(SUM(cost),0) INTO v_lab FROM lab_reports WHERE visit_id = p_visit_id;
+
+  SELECT COALESCE(SUM(m.unit_price * pr.quantity),0) INTO v_pharma
+  FROM prescriptions pr JOIN medicines m ON pr.medicine_id = m.medicine_id
+  WHERE pr.visit_id = p_visit_id;
+
+  INSERT INTO billing(visit_id, consultation_fee, lab_total, pharmacy_total)
+  VALUES (p_visit_id, v_consult, v_lab, v_pharma)
+  ON CONFLICT (visit_id) DO UPDATE
+    SET consultation_fee = EXCLUDED.consultation_fee,
+        lab_total = EXCLUDED.lab_total,
+        pharmacy_total = EXCLUDED.pharmacy_total;
+END;
+$$ LANGUAGE plpgsql;
+</file>
+
+<file path="db/queries.sql">
+-- Subquery: patients with an unpaid bill above average
+SELECT patient_id, full_name FROM patients
+WHERE patient_id IN (
+  SELECT v.patient_id FROM visits v
+  JOIN billing b ON b.visit_id = v.visit_id
+  WHERE b.payment_status = 'Pending'
+  AND b.total_amount > (SELECT AVG(total_amount) FROM billing)
+);
+
+-- Aggregate + HAVING: doctors who treated more than 2 patients
+SELECT d.full_name, COUNT(v.visit_id) AS patient_count
+FROM doctors d JOIN visits v ON v.doctor_id = d.doctor_id
+GROUP BY d.full_name HAVING COUNT(v.visit_id) > 2;
+
+-- Multi-table JOIN via the view
+SELECT * FROM patient_full_summary WHERE status = 'Admitted';
+
+-- Window function: rank doctors by revenue
+SELECT d.full_name, SUM(b.total_amount) AS revenue,
+       RANK() OVER (ORDER BY SUM(b.total_amount) DESC) AS rank
+FROM doctors d
+JOIN visits v ON v.doctor_id = d.doctor_id
+JOIN billing b ON b.visit_id = v.visit_id
+GROUP BY d.full_name;
+</file>
+
+<file path="db/schema.sql">
+CREATE TYPE role_type AS ENUM ('admin','doctor','nurse','receptionist','pharmacist','labtech');
+CREATE TYPE visit_status AS ENUM ('Admitted','Discharged');
+CREATE TYPE payment_status_type AS ENUM ('Pending','Paid');
+
+CREATE TABLE users (
+  user_id SERIAL PRIMARY KEY,
+  username VARCHAR(50) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  role role_type NOT NULL,
+  full_name VARCHAR(100) NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE departments (
+  department_id SERIAL PRIMARY KEY,
+  department_name VARCHAR(50) UNIQUE NOT NULL
+);
+
+CREATE TABLE doctors (
+  doctor_id SERIAL PRIMARY KEY,
+  user_id INT UNIQUE REFERENCES users(user_id) ON DELETE SET NULL,
+  full_name VARCHAR(100) NOT NULL,
+  department_id INT REFERENCES departments(department_id),
+  consultation_fee NUMERIC(10,2) NOT NULL DEFAULT 500
+);
+
+CREATE TABLE nurses (
+  nurse_id SERIAL PRIMARY KEY,
+  user_id INT UNIQUE REFERENCES users(user_id) ON DELETE SET NULL,
+  full_name VARCHAR(100) NOT NULL
+);
+
+CREATE TABLE patients (
+  patient_id VARCHAR(10) PRIMARY KEY,
+  full_name VARCHAR(100) NOT NULL,
+  age INT CHECK (age > 0 AND age < 130),
+  gender VARCHAR(10) CHECK (gender IN ('Male','Female','Other')),
+  phone VARCHAR(15),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE patient_id_counters (
+  year_code VARCHAR(2) PRIMARY KEY,
+  last_number INT NOT NULL DEFAULT 0
+);
+
+CREATE TABLE visits (
+  visit_id SERIAL PRIMARY KEY,
+  patient_id VARCHAR(10) REFERENCES patients(patient_id) ON DELETE CASCADE,
+  doctor_id INT REFERENCES doctors(doctor_id),
+  nurse_id INT REFERENCES nurses(nurse_id),
+  visit_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  status visit_status NOT NULL DEFAULT 'Admitted',
+  diagnosis TEXT,
+  queue_number INT
+);
+
+CREATE TABLE queue_counters (
+  visit_date DATE PRIMARY KEY,
+  last_number INT NOT NULL DEFAULT 0
+);
+
+CREATE TABLE tests (
+  test_id SERIAL PRIMARY KEY,
+  test_name VARCHAR(100) UNIQUE NOT NULL,
+  base_cost NUMERIC(10,2) NOT NULL
+);
+
+CREATE TABLE visit_tests (
+  visit_id INT REFERENCES visits(visit_id) ON DELETE CASCADE,
+  test_id INT REFERENCES tests(test_id),
+  PRIMARY KEY (visit_id, test_id)
+);
+
+CREATE TABLE lab_reports (
+  report_id SERIAL PRIMARY KEY,
+  visit_id INT REFERENCES visits(visit_id) ON DELETE CASCADE,
+  test_id INT REFERENCES tests(test_id),
+  report_text TEXT,
+  cost NUMERIC(10,2) NOT NULL DEFAULT 0,
+  recorded_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE medicines (
+  medicine_id SERIAL PRIMARY KEY,
+  medicine_name VARCHAR(100) UNIQUE NOT NULL,
+  unit_price NUMERIC(10,2) NOT NULL,
+  stock_qty INT NOT NULL DEFAULT 100 CHECK (stock_qty >= 0)
+);
+
+CREATE TABLE prescriptions (
+  prescription_id SERIAL PRIMARY KEY,
+  visit_id INT REFERENCES visits(visit_id) ON DELETE CASCADE,
+  medicine_id INT REFERENCES medicines(medicine_id),
+  quantity INT NOT NULL DEFAULT 1 CHECK (quantity > 0),
+  dispensed BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE TABLE billing (
+  bill_id SERIAL PRIMARY KEY,
+  visit_id INT UNIQUE REFERENCES visits(visit_id) ON DELETE CASCADE,
+  consultation_fee NUMERIC(10,2) NOT NULL DEFAULT 0,
+  lab_total NUMERIC(10,2) NOT NULL DEFAULT 0,
+  pharmacy_total NUMERIC(10,2) NOT NULL DEFAULT 0,
+  total_amount NUMERIC(10,2) GENERATED ALWAYS AS (consultation_fee + lab_total + pharmacy_total) STORED,
+  payment_status payment_status_type NOT NULL DEFAULT 'Pending',
+  generated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_visits_patient ON visits(patient_id);
+CREATE INDEX idx_visits_doctor ON visits(doctor_id);
+CREATE INDEX idx_prescriptions_visit ON prescriptions(visit_id);
+CREATE INDEX idx_labreports_visit ON lab_reports(visit_id);
+CREATE INDEX idx_patients_name ON patients(full_name);
+</file>
+
+<file path="db/seed.sql">
+INSERT INTO departments(department_name) VALUES
+('Cardiology'),('General Medicine'),('Orthopedics'),('Pediatrics'),('Dermatology');
+
+INSERT INTO tests(test_name, base_cost) VALUES
+('Blood Test', 800), ('X-Ray', 1000), ('Blood Sugar Test', 400), ('HbA1c', 900);
+
+INSERT INTO medicines(medicine_name, unit_price, stock_qty) VALUES
+('Paracetamol 500mg', 40, 200), ('Amoxicillin 250mg', 75, 150),
+('Cetirizine 10mg', 30, 300), ('Cough Syrup', 90, 100), ('Ibuprofen 400mg', 60, 250);
+</file>
+
+<file path="public/favicon.svg">
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="46" fill="none" viewBox="0 0 48 46"><path fill="#863bff" d="M25.946 44.938c-.664.845-2.021.375-2.021-.698V33.937a2.26 2.26 0 0 0-2.262-2.262H10.287c-.92 0-1.456-1.04-.92-1.788l7.48-10.471c1.07-1.497 0-3.578-1.842-3.578H1.237c-.92 0-1.456-1.04-.92-1.788L10.013.474c.214-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.471c-1.07 1.498 0 3.579 1.842 3.579h11.377c.943 0 1.473 1.088.89 1.83L25.947 44.94z" style="fill:#863bff;fill:color(display-p3 .5252 .23 1);fill-opacity:1"/><mask id="a" width="48" height="46" x="0" y="0" maskUnits="userSpaceOnUse" style="mask-type:alpha"><path fill="#000" d="M25.842 44.938c-.664.844-2.021.375-2.021-.698V33.937a2.26 2.26 0 0 0-2.262-2.262H10.183c-.92 0-1.456-1.04-.92-1.788l7.48-10.471c1.07-1.498 0-3.579-1.842-3.579H1.133c-.92 0-1.456-1.04-.92-1.787L9.91.473c.214-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.471c-1.07 1.498 0 3.578 1.842 3.578h11.377c.943 0 1.473 1.088.89 1.832L25.843 44.94z" style="fill:#000;fill-opacity:1"/></mask><g mask="url(#a)"><g filter="url(#b)"><ellipse cx="5.508" cy="14.704" fill="#ede6ff" rx="5.508" ry="14.704" style="fill:#ede6ff;fill:color(display-p3 .9275 .9033 1);fill-opacity:1" transform="matrix(.00324 1 1 -.00324 -4.47 31.516)"/></g><g filter="url(#c)"><ellipse cx="10.399" cy="29.851" fill="#ede6ff" rx="10.399" ry="29.851" style="fill:#ede6ff;fill:color(display-p3 .9275 .9033 1);fill-opacity:1" transform="matrix(.00324 1 1 -.00324 -39.328 7.883)"/></g><g filter="url(#d)"><ellipse cx="5.508" cy="30.487" fill="#7e14ff" rx="5.508" ry="30.487" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.814 -25.913 -14.639)scale(1 -1)"/></g><g filter="url(#e)"><ellipse cx="5.508" cy="30.599" fill="#7e14ff" rx="5.508" ry="30.599" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.814 -32.644 -3.334)scale(1 -1)"/></g><g filter="url(#f)"><ellipse cx="5.508" cy="30.599" fill="#7e14ff" rx="5.508" ry="30.599" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="matrix(.00324 1 1 -.00324 -34.34 30.47)"/></g><g filter="url(#g)"><ellipse cx="14.072" cy="22.078" fill="#ede6ff" rx="14.072" ry="22.078" style="fill:#ede6ff;fill:color(display-p3 .9275 .9033 1);fill-opacity:1" transform="rotate(93.35 24.506 48.493)scale(-1 1)"/></g><g filter="url(#h)"><ellipse cx="3.47" cy="21.501" fill="#7e14ff" rx="3.47" ry="21.501" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.009 28.708 47.59)scale(-1 1)"/></g><g filter="url(#i)"><ellipse cx="3.47" cy="21.501" fill="#7e14ff" rx="3.47" ry="21.501" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.009 28.708 47.59)scale(-1 1)"/></g><g filter="url(#j)"><ellipse cx=".387" cy="8.972" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(39.51 .387 8.972)"/></g><g filter="url(#k)"><ellipse cx="47.523" cy="-6.092" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 47.523 -6.092)"/></g><g filter="url(#l)"><ellipse cx="41.412" cy="6.333" fill="#47bfff" rx="5.971" ry="9.665" style="fill:#47bfff;fill:color(display-p3 .2799 .748 1);fill-opacity:1" transform="rotate(37.892 41.412 6.333)"/></g><g filter="url(#m)"><ellipse cx="-1.879" cy="38.332" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 -1.88 38.332)"/></g><g filter="url(#n)"><ellipse cx="-1.879" cy="38.332" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 -1.88 38.332)"/></g><g filter="url(#o)"><ellipse cx="35.651" cy="29.907" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 35.651 29.907)"/></g><g filter="url(#p)"><ellipse cx="38.418" cy="32.4" fill="#47bfff" rx="5.971" ry="15.297" style="fill:#47bfff;fill:color(display-p3 .2799 .748 1);fill-opacity:1" transform="rotate(37.892 38.418 32.4)"/></g></g><defs><filter id="b" width="60.045" height="41.654" x="-19.77" y="16.149" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="7.659"/></filter><filter id="c" width="90.34" height="51.437" x="-54.613" y="-7.533" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="7.659"/></filter><filter id="d" width="79.355" height="29.4" x="-49.64" y="2.03" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="e" width="79.579" height="29.4" x="-45.045" y="20.029" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="f" width="79.579" height="29.4" x="-43.513" y="21.178" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="g" width="74.749" height="58.852" x="15.756" y="-17.901" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="7.659"/></filter><filter id="h" width="61.377" height="25.362" x="23.548" y="2.284" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="i" width="61.377" height="25.362" x="23.548" y="2.284" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="j" width="56.045" height="63.649" x="-27.636" y="-22.853" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="k" width="54.814" height="64.646" x="20.116" y="-38.415" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="l" width="33.541" height="35.313" x="24.641" y="-11.323" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="m" width="54.814" height="64.646" x="-29.286" y="6.009" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="n" width="54.814" height="64.646" x="-29.286" y="6.009" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="o" width="54.814" height="64.646" x="8.244" y="-2.416" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="p" width="39.409" height="43.623" x="18.713" y="10.588" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter></defs></svg>
+</file>
+
+<file path="public/icons.svg">
+<svg xmlns="http://www.w3.org/2000/svg">
+  <symbol id="bluesky-icon" viewBox="0 0 16 17">
+    <g clip-path="url(#bluesky-clip)"><path fill="#08060d" d="M7.75 7.735c-.693-1.348-2.58-3.86-4.334-5.097-1.68-1.187-2.32-.981-2.74-.79C.188 2.065.1 2.812.1 3.251s.241 3.602.398 4.13c.52 1.744 2.367 2.333 4.07 2.145-2.495.37-4.71 1.278-1.805 4.512 3.196 3.309 4.38-.71 4.987-2.746.608 2.036 1.307 5.91 4.93 2.746 2.72-2.746.747-4.143-1.747-4.512 1.702.189 3.55-.4 4.07-2.145.156-.528.397-3.691.397-4.13s-.088-1.186-.575-1.406c-.42-.19-1.06-.395-2.741.79-1.755 1.24-3.64 3.752-4.334 5.099"/></g>
+    <defs><clipPath id="bluesky-clip"><path fill="#fff" d="M.1.85h15.3v15.3H.1z"/></clipPath></defs>
+  </symbol>
+  <symbol id="discord-icon" viewBox="0 0 20 19">
+    <path fill="#08060d" d="M16.224 3.768a14.5 14.5 0 0 0-3.67-1.153c-.158.286-.343.67-.47.976a13.5 13.5 0 0 0-4.067 0c-.128-.306-.317-.69-.476-.976A14.4 14.4 0 0 0 3.868 3.77C1.546 7.28.916 10.703 1.231 14.077a14.7 14.7 0 0 0 4.5 2.306q.545-.748.965-1.587a9.5 9.5 0 0 1-1.518-.74q.191-.14.372-.293c2.927 1.369 6.107 1.369 8.999 0q.183.152.372.294-.723.437-1.52.74.418.838.963 1.588a14.6 14.6 0 0 0 4.504-2.308c.37-3.911-.63-7.302-2.644-10.309m-9.13 8.234c-.878 0-1.599-.82-1.599-1.82 0-.998.705-1.82 1.6-1.82.894 0 1.614.82 1.599 1.82.001 1-.705 1.82-1.6 1.82m5.91 0c-.878 0-1.599-.82-1.599-1.82 0-.998.705-1.82 1.6-1.82.893 0 1.614.82 1.599 1.82 0 1-.706 1.82-1.6 1.82"/>
+  </symbol>
+  <symbol id="documentation-icon" viewBox="0 0 21 20">
+    <path fill="none" stroke="#aa3bff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" d="m15.5 13.333 1.533 1.322c.645.555.967.833.967 1.178s-.322.623-.967 1.179L15.5 18.333m-3.333-5-1.534 1.322c-.644.555-.966.833-.966 1.178s.322.623.966 1.179l1.534 1.321"/>
+    <path fill="none" stroke="#aa3bff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" d="M17.167 10.836v-4.32c0-1.41 0-2.117-.224-2.68-.359-.906-1.118-1.621-2.08-1.96-.599-.21-1.349-.21-2.848-.21-2.623 0-3.935 0-4.983.369-1.684.591-3.013 1.842-3.641 3.428C3 6.449 3 7.684 3 10.154v2.122c0 2.558 0 3.838.706 4.726q.306.383.713.671c.76.536 1.79.64 3.581.66"/>
+    <path fill="none" stroke="#aa3bff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" d="M3 10a2.78 2.78 0 0 1 2.778-2.778c.555 0 1.209.097 1.748-.047.48-.129.854-.503.982-.982.145-.54.048-1.194.048-1.749a2.78 2.78 0 0 1 2.777-2.777"/>
+  </symbol>
+  <symbol id="github-icon" viewBox="0 0 19 19">
+    <path fill="#08060d" fill-rule="evenodd" d="M9.356 1.85C5.05 1.85 1.57 5.356 1.57 9.694a7.84 7.84 0 0 0 5.324 7.44c.387.079.528-.168.528-.376 0-.182-.013-.805-.013-1.454-2.165.467-2.616-.935-2.616-.935-.349-.91-.864-1.143-.864-1.143-.71-.48.051-.48.051-.48.787.051 1.2.805 1.2.805.695 1.194 1.817.857 2.268.649.064-.507.27-.857.49-1.052-1.728-.182-3.545-.857-3.545-3.87 0-.857.31-1.558.8-2.104-.078-.195-.349-1 .077-2.078 0 0 .657-.208 2.14.805a7.5 7.5 0 0 1 1.946-.26c.657 0 1.328.092 1.946.26 1.483-1.013 2.14-.805 2.14-.805.426 1.078.155 1.883.078 2.078.502.546.799 1.247.799 2.104 0 3.013-1.818 3.675-3.558 3.87.284.247.528.714.528 1.454 0 1.052-.012 1.896-.012 2.156 0 .208.142.455.528.377a7.84 7.84 0 0 0 5.324-7.441c.013-4.338-3.48-7.844-7.773-7.844" clip-rule="evenodd"/>
+  </symbol>
+  <symbol id="social-icon" viewBox="0 0 20 20">
+    <path fill="none" stroke="#aa3bff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" d="M12.5 6.667a4.167 4.167 0 1 0-8.334 0 4.167 4.167 0 0 0 8.334 0"/>
+    <path fill="none" stroke="#aa3bff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" d="M2.5 16.667a5.833 5.833 0 0 1 8.75-5.053m3.837.474.513 1.035c.07.144.257.282.414.309l.93.155c.596.1.736.536.307.965l-.723.73a.64.64 0 0 0-.152.531l.207.903c.164.715-.213.991-.84.618l-.872-.52a.63.63 0 0 0-.577 0l-.872.52c-.624.373-1.003.094-.84-.618l.207-.903a.64.64 0 0 0-.152-.532l-.723-.729c-.426-.43-.289-.864.306-.964l.93-.156a.64.64 0 0 0 .412-.31l.513-1.034c.28-.562.735-.562 1.012 0"/>
+  </symbol>
+  <symbol id="x-icon" viewBox="0 0 19 19">
+    <path fill="#08060d" fill-rule="evenodd" d="M1.893 1.98c.052.072 1.245 1.769 2.653 3.77l2.892 4.114c.183.261.333.48.333.486s-.068.089-.152.183l-.522.593-.765.867-3.597 4.087c-.375.426-.734.834-.798.905a1 1 0 0 0-.118.148c0 .01.236.017.664.017h.663l.729-.83c.4-.457.796-.906.879-.999a692 692 0 0 0 1.794-2.038c.034-.037.301-.34.594-.675l.551-.624.345-.392a7 7 0 0 1 .34-.374c.006 0 .93 1.306 2.052 2.903l2.084 2.965.045.063h2.275c1.87 0 2.273-.003 2.266-.021-.008-.02-1.098-1.572-3.894-5.547-2.013-2.862-2.28-3.246-2.273-3.266.008-.019.282-.332 2.085-2.38l2-2.274 1.567-1.782c.022-.028-.016-.03-.65-.03h-.674l-.3.342a871 871 0 0 1-1.782 2.025c-.067.075-.405.458-.75.852a100 100 0 0 1-.803.91c-.148.172-.299.344-.99 1.127-.304.343-.32.358-.345.327-.015-.019-.904-1.282-1.976-2.808L6.365 1.85H1.8zm1.782.91 8.078 11.294c.772 1.08 1.413 1.973 1.425 1.984.016.017.241.02 1.05.017l1.03-.004-2.694-3.766L7.796 5.75 5.722 2.852l-1.039-.004-1.039-.004z" clip-rule="evenodd"/>
+  </symbol>
+</svg>
+</file>
+
+<file path="src/api/axios.js">
+import axios from "axios";
+
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || "http://localhost:5000/api",
+});
+
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem("hms_token");
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+export default api;
+</file>
+
+<file path="src/assets/react.svg">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" aria-hidden="true" role="img" class="iconify iconify--logos" width="35.93" height="32" preserveAspectRatio="xMidYMid meet" viewBox="0 0 256 228"><path fill="#00D8FF" d="M210.483 73.824a171.49 171.49 0 0 0-8.24-2.597c.465-1.9.893-3.777 1.273-5.621c6.238-30.281 2.16-54.676-11.769-62.708c-13.355-7.7-35.196.329-57.254 19.526a171.23 171.23 0 0 0-6.375 5.848a155.866 155.866 0 0 0-4.241-3.917C100.759 3.829 77.587-4.822 63.673 3.233C50.33 10.957 46.379 33.89 51.995 62.588a170.974 170.974 0 0 0 1.892 8.48c-3.28.932-6.445 1.924-9.474 2.98C17.309 83.498 0 98.307 0 113.668c0 15.865 18.582 31.778 46.812 41.427a145.52 145.52 0 0 0 6.921 2.165a167.467 167.467 0 0 0-2.01 9.138c-5.354 28.2-1.173 50.591 12.134 58.266c13.744 7.926 36.812-.22 59.273-19.855a145.567 145.567 0 0 0 5.342-4.923a168.064 168.064 0 0 0 6.92 6.314c21.758 18.722 43.246 26.282 56.54 18.586c13.731-7.949 18.194-32.003 12.4-61.268a145.016 145.016 0 0 0-1.535-6.842c1.62-.48 3.21-.974 4.76-1.488c29.348-9.723 48.443-25.443 48.443-41.52c0-15.417-17.868-30.326-45.517-39.844Zm-6.365 70.984c-1.4.463-2.836.91-4.3 1.345c-3.24-10.257-7.612-21.163-12.963-32.432c5.106-11 9.31-21.767 12.459-31.957c2.619.758 5.16 1.557 7.61 2.4c23.69 8.156 38.14 20.213 38.14 29.504c0 9.896-15.606 22.743-40.946 31.14Zm-10.514 20.834c2.562 12.94 2.927 24.64 1.23 33.787c-1.524 8.219-4.59 13.698-8.382 15.893c-8.067 4.67-25.32-1.4-43.927-17.412a156.726 156.726 0 0 1-6.437-5.87c7.214-7.889 14.423-17.06 21.459-27.246c12.376-1.098 24.068-2.894 34.671-5.345a134.17 134.17 0 0 1 1.386 6.193ZM87.276 214.515c-7.882 2.783-14.16 2.863-17.955.675c-8.075-4.657-11.432-22.636-6.853-46.752a156.923 156.923 0 0 1 1.869-8.499c10.486 2.32 22.093 3.988 34.498 4.994c7.084 9.967 14.501 19.128 21.976 27.15a134.668 134.668 0 0 1-4.877 4.492c-9.933 8.682-19.886 14.842-28.658 17.94ZM50.35 144.747c-12.483-4.267-22.792-9.812-29.858-15.863c-6.35-5.437-9.555-10.836-9.555-15.216c0-9.322 13.897-21.212 37.076-29.293c2.813-.98 5.757-1.905 8.812-2.773c3.204 10.42 7.406 21.315 12.477 32.332c-5.137 11.18-9.399 22.249-12.634 32.792a134.718 134.718 0 0 1-6.318-1.979Zm12.378-84.26c-4.811-24.587-1.616-43.134 6.425-47.789c8.564-4.958 27.502 2.111 47.463 19.835a144.318 144.318 0 0 1 3.841 3.545c-7.438 7.987-14.787 17.08-21.808 26.988c-12.04 1.116-23.565 2.908-34.161 5.309a160.342 160.342 0 0 1-1.76-7.887Zm110.427 27.268a347.8 347.8 0 0 0-7.785-12.803c8.168 1.033 15.994 2.404 23.343 4.08c-2.206 7.072-4.956 14.465-8.193 22.045a381.151 381.151 0 0 0-7.365-13.322Zm-45.032-43.861c5.044 5.465 10.096 11.566 15.065 18.186a322.04 322.04 0 0 0-30.257-.006c4.974-6.559 10.069-12.652 15.192-18.18ZM82.802 87.83a323.167 323.167 0 0 0-7.227 13.238c-3.184-7.553-5.909-14.98-8.134-22.152c7.304-1.634 15.093-2.97 23.209-3.984a321.524 321.524 0 0 0-7.848 12.897Zm8.081 65.352c-8.385-.936-16.291-2.203-23.593-3.793c2.26-7.3 5.045-14.885 8.298-22.6a321.187 321.187 0 0 0 7.257 13.246c2.594 4.48 5.28 8.868 8.038 13.147Zm37.542 31.03c-5.184-5.592-10.354-11.779-15.403-18.433c4.902.192 9.899.29 14.978.29c5.218 0 10.376-.117 15.453-.343c-4.985 6.774-10.018 12.97-15.028 18.486Zm52.198-57.817c3.422 7.8 6.306 15.345 8.596 22.52c-7.422 1.694-15.436 3.058-23.88 4.071a382.417 382.417 0 0 0 7.859-13.026a347.403 347.403 0 0 0 7.425-13.565Zm-16.898 8.101a358.557 358.557 0 0 1-12.281 19.815a329.4 329.4 0 0 1-23.444.823c-7.967 0-15.716-.248-23.178-.732a310.202 310.202 0 0 1-12.513-19.846h.001a307.41 307.41 0 0 1-10.923-20.627a310.278 310.278 0 0 1 10.89-20.637l-.001.001a307.318 307.318 0 0 1 12.413-19.761c7.613-.576 15.42-.876 23.31-.876H128c7.926 0 15.743.303 23.354.883a329.357 329.357 0 0 1 12.335 19.695a358.489 358.489 0 0 1 11.036 20.54a329.472 329.472 0 0 1-11 20.722Zm22.56-122.124c8.572 4.944 11.906 24.881 6.52 51.026c-.344 1.668-.73 3.367-1.15 5.09c-10.622-2.452-22.155-4.275-34.23-5.408c-7.034-10.017-14.323-19.124-21.64-27.008a160.789 160.789 0 0 1 5.888-5.4c18.9-16.447 36.564-22.941 44.612-18.3ZM128 90.808c12.625 0 22.86 10.235 22.86 22.86s-10.235 22.86-22.86 22.86s-22.86-10.235-22.86-22.86s10.235-22.86 22.86-22.86Z"></path></svg>
+</file>
+
+<file path="src/assets/vite.svg">
+<svg xmlns="http://www.w3.org/2000/svg" width="77" height="47" fill="none" aria-labelledby="vite-logo-title" viewBox="0 0 77 47"><title id="vite-logo-title">Vite</title><style>.parenthesis{fill:#000}@media (prefers-color-scheme:dark){.parenthesis{fill:#fff}}</style><path fill="#9135ff" d="M40.151 45.71c-.663.844-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.493c-.92 0-1.457-1.04-.92-1.788l7.479-10.471c1.07-1.498 0-3.578-1.842-3.578H15.443c-.92 0-1.456-1.04-.92-1.788l9.696-13.576c.213-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.472c-1.07 1.497 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.087.89 1.83L40.153 45.712z"/><mask id="a" width="48" height="47" x="14" y="0" maskUnits="userSpaceOnUse" style="mask-type:alpha"><path fill="#000" d="M40.047 45.71c-.663.843-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.389c-.92 0-1.457-1.04-.92-1.788l7.479-10.472c1.07-1.497 0-3.578-1.842-3.578H15.34c-.92 0-1.456-1.04-.92-1.788l9.696-13.575c.213-.297.556-.474.92-.474H53.93c.92 0 1.456 1.04.92 1.788L47.37 13.03c-1.07 1.498 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.088.89 1.831L40.049 45.712z"/></mask><g mask="url(#a)"><g filter="url(#b)"><ellipse cx="5.508" cy="14.704" fill="#eee6ff" rx="5.508" ry="14.704" transform="rotate(269.814 20.96 11.29)scale(-1 1)"/></g><g filter="url(#c)"><ellipse cx="10.399" cy="29.851" fill="#eee6ff" rx="10.399" ry="29.851" transform="rotate(89.814 -16.902 -8.275)scale(1 -1)"/></g><g filter="url(#d)"><ellipse cx="5.508" cy="30.487" fill="#8900ff" rx="5.508" ry="30.487" transform="rotate(89.814 -19.197 -7.127)scale(1 -1)"/></g><g filter="url(#e)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.928 4.177)scale(1 -1)"/></g><g filter="url(#f)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.738 5.52)scale(1 -1)"/></g><g filter="url(#g)"><ellipse cx="14.072" cy="22.078" fill="#eee6ff" rx="14.072" ry="22.078" transform="rotate(93.35 31.245 55.578)scale(-1 1)"/></g><g filter="url(#h)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#i)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#j)"><ellipse cx="14.592" cy="9.743" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(39.51 14.592 9.743)"/></g><g filter="url(#k)"><ellipse cx="61.728" cy="-5.321" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 61.728 -5.32)"/></g><g filter="url(#l)"><ellipse cx="55.618" cy="7.104" fill="#00c2ff" rx="5.971" ry="9.665" transform="rotate(37.892 55.618 7.104)"/></g><g filter="url(#m)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#n)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#o)"><ellipse cx="49.857" cy="30.678" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 49.857 30.678)"/></g><g filter="url(#p)"><ellipse cx="52.623" cy="33.171" fill="#00c2ff" rx="5.971" ry="15.297" transform="rotate(37.892 52.623 33.17)"/></g></g><path d="M6.919 0c-9.198 13.166-9.252 33.575 0 46.789h6.215c-9.25-13.214-9.196-33.623 0-46.789zm62.424 0h-6.215c9.198 13.166 9.252 33.575 0 46.789h6.215c9.25-13.214 9.196-33.623 0-46.789" class="parenthesis"/><defs><filter id="b" width="60.045" height="41.654" x="-5.564" y="16.92" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="c" width="90.34" height="51.437" x="-40.407" y="-6.762" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="d" width="79.355" height="29.4" x="-35.435" y="2.801" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="e" width="79.579" height="29.4" x="-30.84" y="20.8" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="f" width="79.579" height="29.4" x="-29.307" y="21.949" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="g" width="74.749" height="58.852" x="29.961" y="-17.13" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="h" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="i" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="j" width="56.045" height="63.649" x="-13.43" y="-22.082" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="k" width="54.814" height="64.646" x="34.321" y="-37.644" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="l" width="33.541" height="35.313" x="38.847" y="-10.552" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="m" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="n" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="o" width="54.814" height="64.646" x="22.45" y="-1.645" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="p" width="39.409" height="43.623" x="32.919" y="11.36" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter></defs></svg>
+</file>
+
+<file path="src/components/DataTable.jsx">
+function DataTable({ columns, rows, roleColor = "admin", renderRow }) {
+  return (
+    <div className="overflow-x-auto rounded-card shadow-soft border border-gray-200">
+      <table className="min-w-full text-sm text-left text-gray-700">
+        <thead className={`bg-${roleColor}-light text-${roleColor}-dark`}>
+          <tr>
+            {columns.map((col) => (
+              <th key={col} className="px-4 py-3 font-semibold whitespace-nowrap">
+                {col}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 ? (
+            <tr>
+              <td
+                colSpan={columns.length}
+                className="px-4 py-6 text-center text-gray-400"
+              >
+                No patients added yet
+              </td>
+            </tr>
+          ) : (
+            rows.map((row, idx) => renderRow(row, idx))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export default DataTable;
+</file>
+
+<file path="src/components/EMRModal.jsx">
+function EMRModal({ patient, onClose }) {
+  if (!patient) return null;
+  const history = [
+    { date: patient.date, doctorAssigned: patient.doctorAssigned, diagnosis: patient.diagnosis, testsRecommended: patient.testsRecommended, prescription: patient.prescription, isCurrent: true },
+    ...(patient.visitHistory || []),
+  ];
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+      <div className="bg-white rounded-card shadow-card-hover max-w-2xl w-full max-h-[85vh] overflow-y-auto p-8 relative">
+        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-700">✕</button>
+        <h2 className="text-lg font-bold text-brand-dark mb-1">{patient.name} — EMR</h2>
+        <p className="text-xs text-gray-400 mb-4">{patient.patientId} · {patient.age} / {patient.gender}</p>
+
+        <div className="mb-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">Visit History</h3>
+          <div className="flex flex-col gap-2">
+            {history.map((v, i) => (
+              <div key={i} className="bg-gray-50 rounded-md p-3 text-xs border border-gray-100">
+                <p className="font-medium mb-1">{v.date} {v.isCurrent && "(Current)"} — {v.doctorAssigned?.name}</p>
+                <p>Diagnosis: {v.diagnosis || "—"}</p>
+                {v.testsRecommended?.length > 0 && <p>Tests: {v.testsRecommended.join(", ")}</p>}
+                {v.prescription?.length > 0 && <p>Prescription: {v.prescription.join(", ")}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mb-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">Lab Reports</h3>
+          {(patient.labReports || []).length === 0 ? <p className="text-xs text-gray-400">None</p> :
+            patient.labReports.map((r, i) => <p key={i} className="text-xs">{r.test}: {r.report} (₹{r.cost})</p>)}
+        </div>
+
+        <div className="mb-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">Medicines Dispensed</h3>
+          {(patient.medicines || []).length === 0 ? <p className="text-xs text-gray-400">None</p> :
+            patient.medicines.map((m, i) => <p key={i} className="text-xs">{m.name} — ₹{m.cost}</p>)}
+        </div>
+
+        {(patient.vitals || []).length > 0 && (
+          <div>
+            <h3 className="text-sm font-semibold text-gray-700 mb-2">Vitals</h3>
+            {patient.vitals.map((v, i) => (
+              <p key={i} className="text-xs">{v.date}: BP {v.bp || "—"}, Temp {v.temp || "—"}, Pulse {v.pulse || "—"}</p>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default EMRModal;
+</file>
+
+<file path="src/components/SearchBar.jsx">
+function SearchBar({ value, onChange, placeholder = "Search by Patient ID or Name...", colorClass = "brand" }) {
+  return (
+    <div className="relative mb-4">
+      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+        🔍
+      </span>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className={`w-full sm:w-80 pl-9 pr-3 py-2.5 border border-gray-200 rounded-full text-sm bg-white shadow-soft focus:outline-none focus:ring-2 focus:ring-${colorClass}-DEFAULT`}
+      />
+    </div>
+  );
+}
+
+export default SearchBar;
+</file>
+
+<file path="src/context/ToastContext.jsx">
+import { createContext, useContext, useState, useCallback } from "react";
+
+const ToastContext = createContext(null);
+
+export function ToastProvider({ children }) {
+  const [toast, setToast] = useState(null);
+
+  const showToast = useCallback((message, type = "success") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  }, []);
+
+  return (
+    <ToastContext.Provider value={{ showToast }}>
+      {children}
+      {toast && (
+        <div className={`fixed bottom-6 right-6 z-[100] px-5 py-3 rounded-lg shadow-card-hover text-sm text-white animate-toast-in ${
+          toast.type === "error" ? "bg-red-500" : "bg-brand-DEFAULT"
+        }`}>
+          {toast.message}
+        </div>
+      )}
+    </ToastContext.Provider>
+  );
+}
+
+export function useToast() {
+  const ctx = useContext(ToastContext);
+  if (!ctx) throw new Error("useToast must be used within ToastProvider");
+  return ctx;
+}
+</file>
+
+<file path="src/data/dateUtils.js">
+export function getTodayFormatted() {
+  const today = new Date();
+
+  const day = String(today.getDate()).padStart(2, "0");
+  const month = String(today.getMonth() + 1).padStart(2, "0"); // months are 0-indexed
+  const year = today.getFullYear();
+
+  return `${day}-${month}-${year}`; // e.g. "26-07-2026"
+}
+</file>
+
+<file path="src/hooks/useLookups.js">
+import { useState, useEffect } from "react";
+import api from "../api/axios";
+
+export function useLookups() {
+  const [doctors, setDoctors] = useState([]);
+  const [nurses, setNurses] = useState([]);
+  const [medicines, setMedicines] = useState([]);
+  const [tests, setTests] = useState([]);
+
+  useEffect(() => {
+    api.get("/lookup/doctors").then((r) => setDoctors(r.data));
+    api.get("/lookup/nurses").then((r) => setNurses(r.data));
+    api.get("/lookup/medicines").then((r) => setMedicines(r.data));
+    api.get("/lookup/tests").then((r) => setTests(r.data));
+  }, []);
+
+  return { doctors, nurses, medicines, tests };
+}
+</file>
+
+<file path="src/routes/ProtectedRoute.jsx">
+import { Navigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+
+function ProtectedRoute({ role, children }) {
+  const { user } = useAuth();
+  if (!user || user.role !== role) return <Navigate to="/" replace />;
+  return children;
+}
+
+export default ProtectedRoute;
+</file>
+
+<file path="src/App.css">
+.counter {
+  font-size: 16px;
+  padding: 5px 10px;
+  border-radius: 5px;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 2px solid transparent;
+  transition: border-color 0.3s;
+  margin-bottom: 24px;
+
+  &:hover {
+    border-color: var(--accent-border);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+.hero {
+  position: relative;
+
+  .base,
+  .framework,
+  .vite {
+    inset-inline: 0;
+    margin: 0 auto;
+  }
+
+  .base {
+    width: 170px;
+    position: relative;
+    z-index: 0;
+  }
+
+  .framework,
+  .vite {
+    position: absolute;
+  }
+
+  .framework {
+    z-index: 1;
+    top: 34px;
+    height: 28px;
+    transform: perspective(2000px) rotateZ(300deg) rotateX(44deg) rotateY(39deg)
+      scale(1.4);
+  }
+
+  .vite {
+    z-index: 0;
+    top: 107px;
+    height: 26px;
+    width: auto;
+    transform: perspective(2000px) rotateZ(300deg) rotateX(40deg) rotateY(39deg)
+      scale(0.8);
+  }
+}
+
+#center {
+  display: flex;
+  flex-direction: column;
+  gap: 25px;
+  place-content: center;
+  place-items: center;
+  flex-grow: 1;
+
+  @media (max-width: 1024px) {
+    padding: 32px 20px 24px;
+    gap: 18px;
+  }
+}
+
+#next-steps {
+  display: flex;
+  border-top: 1px solid var(--border);
+  text-align: left;
+
+  & > div {
+    flex: 1 1 0;
+    padding: 32px;
+    @media (max-width: 1024px) {
+      padding: 24px 20px;
+    }
+  }
+
+  .icon {
+    margin-bottom: 16px;
+    width: 22px;
+    height: 22px;
+  }
+
+  @media (max-width: 1024px) {
+    flex-direction: column;
+    text-align: center;
+  }
+}
+
+#docs {
+  border-right: 1px solid var(--border);
+
+  @media (max-width: 1024px) {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+#next-steps ul {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  gap: 8px;
+  margin: 32px 0 0;
+
+  .logo {
+    height: 18px;
+  }
+
+  a {
+    color: var(--text-h);
+    font-size: 16px;
+    border-radius: 6px;
+    background: var(--social-bg);
+    display: flex;
+    padding: 6px 12px;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+    transition: box-shadow 0.3s;
+
+    &:hover {
+      box-shadow: var(--shadow);
+    }
+    .button-icon {
+      height: 18px;
+      width: 18px;
+    }
+  }
+
+  @media (max-width: 1024px) {
+    margin-top: 20px;
+    flex-wrap: wrap;
+    justify-content: center;
+
+    li {
+      flex: 1 1 calc(50% - 8px);
+    }
+
+    a {
+      width: 100%;
+      justify-content: center;
+      box-sizing: border-box;
+    }
+  }
+}
+
+#spacer {
+  height: 88px;
+  border-top: 1px solid var(--border);
+  @media (max-width: 1024px) {
+    height: 48px;
+  }
+}
+
+.ticks {
+  position: relative;
+  width: 100%;
+
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    top: -4.5px;
+    border: 5px solid transparent;
+  }
+
+  &::before {
+    left: 0;
+    border-left-color: var(--border);
+  }
+  &::after {
+    right: 0;
+    border-right-color: var(--border);
+  }
+}
+</file>
+
+<file path="src/main.jsx">
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import "./index.css";
+import App from "./App.jsx";
+
+createRoot(document.getElementById("root")).render(
+  <StrictMode>
+    <App />
+  </StrictMode>
+);
+</file>
+
+<file path="eslint.config.js">
+import js from '@eslint/js'
+import globals from 'globals'
+import reactHooks from 'eslint-plugin-react-hooks'
+import reactRefresh from 'eslint-plugin-react-refresh'
+import { defineConfig, globalIgnores } from 'eslint/config'
+
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{js,jsx}'],
+    extends: [
+      js.configs.recommended,
+      reactHooks.configs.flat.recommended,
+      reactRefresh.configs.vite,
+    ],
+    languageOptions: {
+      globals: globals.browser,
+      parserOptions: { ecmaFeatures: { jsx: true } },
+    },
+  },
+])
+</file>
+
+<file path="index.html">
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hospital Management System</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+</file>
+
+<file path="README.md">
+# React + Vite
+
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+
+Currently, two official plugins are available:
+
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+
+## React Compiler
+
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+
+## Expanding the ESLint configuration
+
+If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+</file>
+
+<file path="tailwind.config.js">
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: [
+    "./index.html",
+    "./src/**/*.{js,jsx}",
+  ],
+  theme: {
+    extend: {
+      colors: {
+        reception: {
+          light: "#EAF3FB",
+          DEFAULT: "#4A90D9",
+          dark: "#2E5C8A",
+        },
+        doctor: {
+          light: "#E9F7EF",
+          DEFAULT: "#4CAF7D",
+          dark: "#2E6E4E",
+        },
+        lab: {
+          light: "#F1EAFB",
+          DEFAULT: "#8B6FCE",
+          dark: "#5B4494",
+        },
+        pharmacy: {
+          light: "#FDF1E6",
+          DEFAULT: "#E29A4E",
+          dark: "#A9682A",
+        },
+        admin: {
+          light: "#F1F2F4",
+          DEFAULT: "#6B7280",
+          dark: "#374151",
+        },
+      },
+      fontFamily: {
+        sans: ["Inter", "system-ui", "sans-serif"],
+      },
+      borderRadius: {
+        card: "12px",
+      },
+      boxShadow: {
+        soft: "0 2px 8px rgba(0, 0, 0, 0.06)",
+      },
+    },
+  },
+  plugins: [],
+};
+</file>
+
+<file path="vite.config.js">
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+  base: '/Hospital-Management-System/',
+})
+</file>
+
+<file path="backend/routes/admin.routes.js">
+import express from "express";
+import bcrypt from "bcrypt";
+import { pool } from "../db.js";
+import { verifyToken, requireRole } from "../middleware/auth.middleware.js";
+
+const router = express.Router();
+
+router.use(verifyToken, requireRole("admin"));
+
+function genTempPassword() {
+  return Math.random().toString(36).slice(-4) + Math.random().toString(36).slice(-4);
+}
+
+async function logAction(client, { action, entity_type, entity_id, performed_by, details }) {
+  await client.query(
+    `INSERT INTO audit_log(action, entity_type, entity_id, performed_by, details)
+     VALUES ($1,$2,$3,$4,$5)`,
+    [action, entity_type, String(entity_id), performed_by, details || null]
+  );
+}
+
+router.get("/staff", async (req, res) => {
+  try {
+    const doctors = await pool.query(`
+      SELECT d.doctor_id AS staff_id, 'doctor' AS role, d.full_name, dep.department_name,
+             d.consultation_fee, d.joining_date, d.leaving_date, d.salary, d.is_active,
+             u.username
+      FROM doctors d
+      LEFT JOIN departments dep ON d.department_id = dep.department_id
+      LEFT JOIN users u ON u.user_id = d.user_id
+      ORDER BY d.is_active DESC, d.full_name
+    `);
+    const nurses = await pool.query(`
+      SELECT n.nurse_id AS staff_id, 'nurse' AS role, n.full_name, NULL AS department_name,
+             NULL AS consultation_fee, n.joining_date, n.leaving_date, n.salary, n.is_active,
+             u.username
+      FROM nurses n
+      LEFT JOIN users u ON u.user_id = n.user_id
+      ORDER BY n.is_active DESC, n.full_name
+    `);
+    res.json([...doctors.rows, ...nurses.rows]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/departments", async (req, res) => {
+  const r = await pool.query("SELECT * FROM departments ORDER BY department_name");
+  res.json(r.rows);
+});
+
+router.post("/staff", async (req, res) => {
+  const { role, full_name, department_id, consultation_fee, joining_date, salary } = req.body;
+  if (!["doctor", "nurse"].includes(role)) {
+    return res.status(400).json({ error: "role must be 'doctor' or 'nurse'" });
+  }
+  if (!full_name || !full_name.trim()) {
+    return res.status(400).json({ error: "Full name is required" });
+  }
+  if (role === "doctor" && !department_id) {
+    return res.status(400).json({ error: "Department is required for doctors" });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const tempPassword = genTempPassword();
+    const hash = await bcrypt.hash(tempPassword, 10);
+    const username =
+      full_name.toLowerCase().trim().replace(/[^a-z]+/g, ".") + "." + Date.now().toString().slice(-4);
+
+    const userResult = await client.query(
+      `INSERT INTO users(username, password_hash, role, full_name)
+       VALUES ($1,$2,$3,$4) RETURNING user_id`,
+      [username, hash, role, full_name.trim()]
+    );
+    const user_id = userResult.rows[0].user_id;
+
+    let staffRow;
+    if (role === "doctor") {
+      staffRow = await client.query(
+        `INSERT INTO doctors(user_id, full_name, department_id, consultation_fee, joining_date, salary, is_active)
+         VALUES ($1,$2,$3,$4,$5,$6,true) RETURNING *`,
+        [user_id, full_name.trim(), Number(department_id), consultation_fee || 500, joining_date || new Date(), salary || 0]
+      );
+    } else {
+      staffRow = await client.query(
+        `INSERT INTO nurses(user_id, full_name, joining_date, salary, is_active)
+         VALUES ($1,$2,$3,$4,true) RETURNING *`,
+        [user_id, full_name.trim(), joining_date || new Date(), salary || 0]
+      );
+    }
+
+    await logAction(client, {
+      action: "staff_added",
+      entity_type: "staff",
+      entity_id: staffRow.rows[0][role === "doctor" ? "doctor_id" : "nurse_id"],
+      performed_by: req.user.full_name,
+      details: `Recruited ${role} ${full_name.trim()} (username: ${username})`,
+    });
+
+    await client.query("COMMIT");
+    res.status(201).json({ ...staffRow.rows[0], username, temp_password: tempPassword });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+router.put("/staff/:role/:id", async (req, res) => {
+  const { role, id } = req.params;
+  const { salary, consultation_fee } = req.body;
+  try {
+    if (role === "doctor") {
+      const r = await pool.query(
+        `UPDATE doctors SET salary = COALESCE($1, salary), consultation_fee = COALESCE($2, consultation_fee)
+         WHERE doctor_id = $3 RETURNING *`,
+        [salary, consultation_fee, id]
+      );
+      return res.json(r.rows[0]);
+    }
+    const r = await pool.query(
+      `UPDATE nurses SET salary = COALESCE($1, salary) WHERE nurse_id = $2 RETURNING *`,
+      [salary, id]
+    );
+    res.json(r.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put("/staff/:role/:id/status", async (req, res) => {
+  const { role, id } = req.params;
+  const { is_active, leaving_date } = req.body;
+  const table = role === "doctor" ? "doctors" : "nurses";
+  const idCol = role === "doctor" ? "doctor_id" : "nurse_id";
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const r = await client.query(
+      `UPDATE ${table} SET is_active = $1, leaving_date = $2 WHERE ${idCol} = $3 RETURNING *`,
+      [is_active, is_active ? null : leaving_date || new Date(), id]
+    );
+    await logAction(client, {
+      action: is_active ? "staff_reactivated" : "staff_deactivated",
+      entity_type: "staff",
+      entity_id: id,
+      performed_by: req.user.full_name,
+      details: `${role} ${r.rows[0]?.full_name || id} marked ${is_active ? "active" : "inactive"}`,
+    });
+    await client.query("COMMIT");
+    res.json(r.rows[0]);
+  } catch (err) {
+    await client.query("ROLLBACK");
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Mark a bill Paid/Pending, with audit trail + timestamp
+router.put("/billing/:visitId/payment", async (req, res) => {
+  const { visitId } = req.params;
+  const { payment_status } = req.body;
+  if (!["Paid", "Pending"].includes(payment_status)) {
+    return res.status(400).json({ error: "payment_status must be 'Paid' or 'Pending'" });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const r = await client.query(
+      `UPDATE billing SET payment_status = $1, payment_updated_at = NOW()
+       WHERE visit_id = $2 RETURNING *`,
+      [payment_status, visitId]
+    );
+    if (r.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "No bill found for this visit" });
+    }
+    await logAction(client, {
+      action: payment_status === "Paid" ? "payment_marked_paid" : "payment_marked_pending",
+      entity_type: "billing",
+      entity_id: visitId,
+      performed_by: req.user.full_name,
+      details: `Bill for visit #${visitId} marked ${payment_status}`,
+    });
+    await client.query("COMMIT");
+    res.json(r.rows[0]);
+  } catch (err) {
+    await client.query("ROLLBACK");
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+router.get("/audit-log", async (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 100, 500);
+  const r = await pool.query(`SELECT * FROM audit_log ORDER BY created_at DESC LIMIT $1`, [limit]);
+  res.json(r.rows);
+});
+
+export default router;
+</file>
+
+<file path="backend/routes/lookup.routes.js">
+import express from "express";
+import { pool } from "../db.js";
+const router = express.Router();
+
+router.get("/doctors", async (req, res) => {
+  const r = await pool.query(
+    `SELECT d.doctor_id, d.full_name, dep.department_name, d.consultation_fee
+     FROM doctors d JOIN departments dep ON d.department_id = dep.department_id
+     WHERE d.is_active = true`
+  );
+  res.json(r.rows);
+});
+
+router.get("/nurses", async (req, res) => {
+  res.json((await pool.query("SELECT nurse_id, full_name FROM nurses WHERE is_active = true")).rows);
+});
+
+router.get("/medicines", async (req, res) => {
+  res.json((await pool.query("SELECT * FROM medicines ORDER BY medicine_name")).rows);
+});
+
+router.get("/tests", async (req, res) => {
+  res.json((await pool.query("SELECT * FROM tests ORDER BY test_name")).rows);
+});
+
+export default router;
+</file>
+
+<file path="backend/routes/visits.routes.js">
+import express from "express";
+import { pool } from "../db.js";
+import { verifyToken } from "../middleware/auth.middleware.js";
+const router = express.Router();
+
+router.use(verifyToken);
+
+router.post("/", async (req, res) => {
+  const { patient_id, doctor_id, nurse_id } = req.body;
+  try {
+    const r = await pool.query(
+      `INSERT INTO visits(patient_id, doctor_id, nurse_id) VALUES ($1,$2,$3) RETURNING *`,
+      [patient_id, doctor_id, nurse_id]
+    );
+    res.status(201).json(r.rows[0]);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.put("/:id/consult", async (req, res) => {
+  const { id } = req.params;
+  const { diagnosis, test_ids = [], medicine_ids = [] } = req.body;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("UPDATE visits SET diagnosis = $1 WHERE visit_id = $2", [diagnosis, id]);
+    for (const test_id of test_ids) {
+      await client.query(
+        `INSERT INTO visit_tests(visit_id, test_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
+        [id, test_id]
+      );
+    }
+    for (const med of medicine_ids) {
+      await client.query(
+        `INSERT INTO prescriptions(visit_id, medicine_id, quantity) VALUES ($1,$2,$3)`,
+        [id, med.medicine_id, med.quantity || 1]
+      );
+    }
+    await client.query("COMMIT");
+    res.json({ message: "Consultation saved" });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    res.status(500).json({ error: err.message });
+  } finally { client.release(); }
+});
+
+router.put("/:id/discharge", async (req, res) => {
+  const { id } = req.params;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("CALL finalize_billing($1)", [id]);
+    await client.query(
+      "UPDATE visits SET status = 'Discharged', discharged_at = NOW() WHERE visit_id = $1",
+      [id]
+    );
+    await client.query(
+      `INSERT INTO audit_log(action, entity_type, entity_id, performed_by, details)
+       VALUES ('patient_discharged','visit',$1,$2,$3)`,
+      [id, req.user?.full_name || "Unknown", `Visit #${id} discharged and billed`]
+    );
+    await client.query("COMMIT");
+    res.json({ message: "Patient discharged and billed" });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    res.status(500).json({ error: err.message });
+  } finally { client.release(); }
+});
+
+export default router;
+</file>
+
+<file path="backend/db.js">
+import pkg from "pg";
+import dotenv from "dotenv";
+dotenv.config();
+const { Pool } = pkg;
+export const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL?.includes("localhost")
+    ? false
+    : { rejectUnauthorized: false },
+});
+</file>
+
+<file path="backend/server.js">
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+import authRoutes from "./routes/auth.routes.js";
+import patientRoutes from "./routes/patients.routes.js";
+import visitRoutes from "./routes/visits.routes.js";
+import labRoutes from "./routes/lab.routes.js";
+import pharmacyRoutes from "./routes/pharmacy.routes.js";
+import reportRoutes from "./routes/reports.routes.js";
+import lookupRoutes from "./routes/lookup.routes.js";
+import nurseRoutes from "./routes/nurse.routes.js";
+import adminRoutes from "./routes/admin.routes.js";
+dotenv.config();
+const app = express();
+app.use(cors());
+app.use(express.json());
+app.use("/api/nurse", nurseRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/patients", patientRoutes);
+app.use("/api/visits", visitRoutes);
+app.use("/api/lab", labRoutes);
+app.use("/api/pharmacy", pharmacyRoutes);
+app.use("/api/reports", reportRoutes);
+app.use("/api/lookup", lookupRoutes);
+app.get("/", (req, res) => res.json({ status: "HMS API running" }));
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+</file>
+
+<file path="src/context/PatientContext.jsx">
+import { createContext, useContext, useState, useEffect, useCallback } from "react";
+import api from "../api/axios";
+
+const PatientContext = createContext(null);
+
+export function PatientProvider({ children }) {
+  const [patients, setPatients] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchPatients = useCallback(async () => {
+    setLoading(true);
+    const { data } = await api.get("/patients");
+    setPatients(data);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetchPatients(); }, [fetchPatients]);
+
+  const addPatient = async (newPatient) => {
+    const { data } = await api.post("/patients", newPatient);
+    await fetchPatients();
+    return data;
+  };
+
+  const getPatient = async (patientId) => (await api.get(`/patients/${patientId}`)).data;
+
+  return (
+    <PatientContext.Provider value={{ patients, loading, addPatient, getPatient, refresh: fetchPatients }}>
+      {children}
+    </PatientContext.Provider>
+  );
+}
+
+export function usePatients() {
+  const ctx = useContext(PatientContext);
+  if (!ctx) throw new Error("usePatients must be used within a PatientProvider");
+  return ctx;
+}
+</file>
+
+<file path="src/utils/exportCsv.js">
+export function exportPatientsCsv(patients) {
+  const headers = ["Patient ID","Name","Age","Gender","Doctor","Status","Consultation","Lab","Pharmacy","Total"];
+  const rows = patients.map((p) => [
+    p.patient_Id, p.name, p.age, p.gender,
+    p.doctorAssigned?.name || "", p.status,
+    p.consultationFee || 0, p.labTestCost || 0, p.pharmacyTotalCost || 0,
+    (p.consultationFee||0)+(p.labTestCost||0)+(p.pharmacyTotalCost||0),
+  ]);
+  const csv = [headers, ...rows].map((r) => r.join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `patients_${Date.now()}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+</file>
+
+<file path=".gitignore">
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.env
+</file>
+
+<file path="package.json">
+{
+  "name": "hms-ui",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "predeploy": "npm run build",
+"deploy": "gh-pages -d dist",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-router-dom": "^7.18.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "autoprefixer": "^10.5.4",
+    "axios": "^1.7.9",
+    "eslint": "^10.6.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "gh-pages": "^6.3.0",
+    "globals": "^17.7.0",
+    "postcss": "^8.5.23",
+    "tailwindcss": "^4.3.3",
+    "vite": "^8.1.1"
+  }
+}
+</file>
+
+<file path="backend/routes/auth.routes.js">
+import express from "express";
+import jwt from "jsonwebtoken";
+import bcrypt from "bcrypt";
+import { pool } from "../db.js";
+
+const router = express.Router();
+
+router.post("/login", async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: "Username and password are required" });
+  }
+  try {
+    const result = await pool.query("SELECT * FROM users WHERE username = $1", [username]);
+    if (result.rows.length === 0) return res.status(401).json({ error: "Invalid username or password" });
+
+    const user = result.rows[0];
+    const match = await bcrypt.compare(password, user.password_hash);
+    if (!match) return res.status(401).json({ error: "Invalid username or password" });
+
+    let staff_id = null;
+    let is_active = true;
+
+    if (user.role === "doctor") {
+      const d = await pool.query("SELECT doctor_id, is_active FROM doctors WHERE user_id = $1", [user.user_id]);
+      staff_id = d.rows[0]?.doctor_id || null;
+      is_active = d.rows[0]?.is_active ?? true;
+    } else if (user.role === "nurse") {
+      const n = await pool.query("SELECT nurse_id, is_active FROM nurses WHERE user_id = $1", [user.user_id]);
+      staff_id = n.rows[0]?.nurse_id || null;
+      is_active = n.rows[0]?.is_active ?? true;
+    }
+
+    if (!is_active) {
+      return res.status(403).json({ error: "This staff account has been deactivated. Contact admin." });
+    }
+
+    const token = jwt.sign(
+      { user_id: user.user_id, role: user.role, full_name: user.full_name, staff_id },
+      process.env.JWT_SECRET,
+      { expiresIn: "8h" }
+    );
+
+    res.json({ token, role: user.role, full_name: user.full_name, staff_id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+export default router;
+</file>
+
+<file path="src/components/DashboardLayout.jsx">
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+const navItems = [
+  { name: "Receptionist", path: "/receptionist", icon: "📋", color: "reception" },
+  { name: "Doctor", path: "/doctor", icon: "🩺", color: "doctor" },
+  { name: "Nurse", path: "/nurse", icon: "🩹", color: "nurse" },
+  { name: "Lab Technician", path: "/lab", icon: "🧪", color: "lab" },
+  { name: "Pharmacy", path: "/pharmacy", icon: "💊", color: "pharmacy" },
+  
+  { name: "Admin", path: "/admin", icon: "🗂️", color: "admin" },
+  
+];
+
+
+function DashboardLayout({ title, subtitle, icon, colorClass = "brand", children }) {
+  const location = useLocation();
+  const { user, logout } = useAuth();
+const navigate = useNavigate();
+
+  return (
+    <div className="min-h-screen flex bg-gray-50">
+      {/* Sidebar */}
+      <aside className="w-64 bg-white border-r border-gray-100 flex-col shrink-0 hidden md:flex">
+        <Link to="/" className="flex items-center gap-2.5 px-6 py-6 border-b border-gray-100">
+          <div className="w-9 h-9 rounded-xl bg-brand-DEFAULT flex items-center justify-center text-white text-base font-bold shrink-0">
+            ✚
+          </div>
+          <div>
+            <p className="text-sm font-bold text-brand-dark leading-none">MCR HMS</p>
+            <p className="text-[10px] text-gray-400 tracking-wide">MULTISPECIALITY HOSPITAL</p>
+          </div>
+        </Link>
+
+        <nav className="flex-1 px-3 py-4 flex flex-col gap-1">
+          <p className="text-[10px] font-semibold text-gray-300 px-3 mb-1 tracking-wide">
+            DEPARTMENTS
+          </p>
+          {navItems.map((item) => {
+            const isActive = location.pathname === item.path;
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                  isActive
+                    ? `bg-${item.color}-light text-${item.color}-dark`
+                    : "text-gray-500 hover:bg-gray-50 hover:text-gray-800"
+                }`}
+              >
+                <span className="text-base">{item.icon}</span>
+                {item.name}
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div className="px-6 py-4 border-t border-gray-100">
+          <p className="text-[10px] text-gray-300">MCR HMS Prototype v1.0</p>
+        </div>
+      </aside>
+
+      {/* Main content */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Topbar */}
+        <header className="bg-white border-b border-gray-100 px-6 sm:px-8 py-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div
+              className={`w-10 h-10 rounded-xl bg-${colorClass}-light flex items-center justify-center text-xl shrink-0`}
+            >
+              {icon}
+            </div>
+            <div className="min-w-0">
+              <h1 className={`text-lg font-bold text-${colorClass}-dark leading-tight truncate`}>
+                {title}
+              </h1>
+              {subtitle && <p className="text-xs text-gray-400 truncate">{subtitle}</p>}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 shrink-0">
+           <span className={`hidden sm:inline-flex items-center gap-1.5 bg-${colorClass}-light text-${colorClass}-dark text-xs font-medium px-3 py-1.5 rounded-full`}>
+  ● {user?.name || title.replace(" Dashboard", "")}
+</span>
+            <Link
+              to="/"
+              className="text-sm text-gray-500 hover:text-gray-800 bg-gray-50 hover:bg-gray-100 px-4 py-2 rounded-full transition"
+            >
+              ← Home
+            </Link>
+            <button
+  onClick={() => { logout(); navigate("/"); }}
+  className="text-sm text-gray-500 hover:text-gray-800 bg-gray-50 hover:bg-gray-100 px-4 py-2 rounded-full transition"
+>
+  Logout
+</button>
+          </div>
+        </header>
+
+        {/* Page content */}
+        <main className="flex-1 px-6 sm:px-8 py-8 max-w-7xl w-full mx-auto">{children}</main>
+      </div>
+    </div>
+  );
+}
+
+export default DashboardLayout;
+</file>
+
+<file path="src/context/AuthContext.jsx">
+import { createContext, useContext, useState } from "react";
+import api from "../api/axios";
+
+const AuthContext = createContext(null);
+
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(null);
+
+  const login = async (username, password) => {
+    const { data } = await api.post("/auth/login", { username, password });
+    localStorage.setItem("hms_token", data.token);
+    const userData = { role: data.role, name: data.full_name, staffId: data.staff_id };
+    setUser(userData);
+    return data;
+  };
+
+  const logout = () => {
+    localStorage.removeItem("hms_token");
+    setUser(null);
+  };
+
+  return <AuthContext.Provider value={{ user, login, logout }}>{children}</AuthContext.Provider>;
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
+  return ctx;
+}
+</file>
+
+<file path="src/index.css">
+@import "tailwindcss";
+
+@theme {
+  --color-reception-light: #DCEBFC;
+  --color-reception-DEFAULT: #3B82F6;
+  --color-reception-dark: #1D4ED8;
+
+  --color-doctor-light: #D1FAE5;
+  --color-doctor-DEFAULT: #10B981;
+  --color-doctor-dark: #047857;
+
+  --color-lab-light: #E9E1FB;
+  --color-lab-DEFAULT: #8B5CF6;
+  --color-lab-dark: #5B21B6;
+
+  --color-pharmacy-light: #FEF0DC;
+  --color-pharmacy-DEFAULT: #F59E0B;
+  --color-pharmacy-dark: #B45309;
+
+  --color-nurse-light: #FCE7F3;
+  --color-nurse-DEFAULT: #EC4899;
+  --color-nurse-dark: #9D174D;
+
+  --color-admin-light: #E2E8F0;
+  --color-admin-DEFAULT: #475569;
+  --color-admin-dark: #1E293B;
+
+  --color-brand-light: #EFF6FF;
+  --color-brand-DEFAULT: #2563EB;
+  --color-brand-dark: #1E3A8A;
+
+  --radius-card: 14px;
+  --shadow-soft: 0 4px 14px rgba(30, 64, 175, 0.08);
+  --shadow-card-hover: 0 8px 24px rgba(30, 64, 175, 0.15);
+}
+
+body {
+  margin: 0;
+  font-family: "Inter", system-ui, sans-serif;
+  background: linear-gradient(180deg, #EFF6FF 0%, #F8FAFC 40%, #F8FAFC 100%);
+  min-height: 100vh;
+}
+
+#root {
+  width: 100%;
+  min-height: 100svh;
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-toast-in {
+  animation: toast-in 0.25s ease-out;
+}
+</file>
+
+<file path="src/pages/Landing.jsx">
+import { useNavigate } from "react-router-dom";
+import { useState } from "react";
+import { useAuth } from "../context/AuthContext";
+import { usePatients } from "../context/PatientContext";
+
+const roles = [
+ { name: "Receptionist", role: "receptionist", path: "/receptionist", color: "reception", icon: "📋", desc: "Appointments & billing" },
+{ name: "Doctor", role: "doctor", path: "/doctor", color: "doctor", icon: "🩺", desc: "Diagnosis & prescriptions" },
+{ name: "Nurse", role: "nurse", path: "/nurse", color: "nurse", icon: "🩹", desc: "Vitals & patient care" },
+{ name: "Lab Technician", role: "labtech", path: "/lab", color: "lab", icon: "🧪", desc: "Test reports & results" },
+{ name: "Pharmacy", role: "pharmacist", path: "/pharmacy", color: "pharmacy", icon: "💊", desc: "Medicines & dispensing" },
+{ name: "Admin", role: "admin", path: "/admin", color: "admin", icon: "🗂️", desc: "Full hospital overview" },
+];
+
+const roleToPath = {
+  admin: "/admin",
+  doctor: "/doctor",
+  nurse: "/nurse",
+  receptionist: "/receptionist",
+  pharmacist: "/pharmacy",
+  labtech: "/lab",
+};
+
+const highlights = [
+  { icon: "🔗", title: "Unified Patient Records", desc: "Every department — reception, doctor, lab, pharmacy — works off a single Patient ID." },
+  { icon: "⚡", title: "Real-time Workflow", desc: "Diagnosis, tests and prescriptions flow instantly from one department to the next." },
+  { icon: "🔒", title: "Role-based Access", desc: "Each department sees only what it needs — clean, focused dashboards." },
+  { icon: "📊", title: "Centralized Admin View", desc: "Administrators get a full, drillable overview of every patient and department." },
+];
+
+function Landing() {
+  const { login } = useAuth();
+  const navigate = useNavigate();
+  const { patients } = usePatients();
+
+ const [loggingIn, setLoggingIn] = useState(null);
+  const [error, setError] = useState("");
+
+  const [quickSearch, setQuickSearch] = useState("");
+  const quickResults =
+    quickSearch.trim().length >= 2
+      ? patients
+          .filter(
+            (p) =>
+              p.patient_id.toLowerCase().includes(quickSearch.toLowerCase()) ||
+              p.full_name.toLowerCase().includes(quickSearch.toLowerCase())
+          )
+          .slice(0, 5)
+      : [];
+
+const [selectedRole, setSelectedRole] = useState(null); // which tile is showing the login form
+const [loginUsername, setLoginUsername] = useState("");
+const [loginPassword, setLoginPassword] = useState("");
+
+const handleRoleLogin = async (e) => {
+  e.preventDefault();
+  setError("");
+  setLoggingIn(selectedRole);
+  try {
+    const data = await login(loginUsername, loginPassword);
+    navigate(roleToPath[data.role] || "/");
+  } catch (err) {
+    setError(err.response?.data?.error || "Invalid username or password.");
+  } finally {
+    setLoggingIn(null);
+  }
+};
+  return (
+    <div className="min-h-screen relative overflow-hidden">
+      <div className="absolute -top-24 -left-24 w-96 h-96 bg-brand-light rounded-full blur-3xl opacity-60 -z-10"></div>
+      <div className="absolute top-1/3 -right-24 w-96 h-96 bg-reception-light rounded-full blur-3xl opacity-50 -z-10"></div>
+
+      <header className="bg-white border-b border-gray-100 shadow-soft">
+        <div className="max-w-7xl mx-auto px-6 sm:px-10 py-8 flex flex-col sm:flex-row items-center justify-between gap-6">
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-brand-DEFAULT flex items-center justify-center text-white text-3xl sm:text-4xl font-bold shadow-card-hover shrink-0">
+              ✚
+            </div>
+            <div className="text-left">
+              <h1 className="text-2xl sm:text-4xl font-bold text-brand-dark leading-tight">
+                MCR Multispeciality Hospital
+              </h1>
+              <p className="text-xs sm:text-sm text-gray-400 tracking-wide mt-1">
+                DIGITAL HOSPITAL MANAGEMENT SYSTEM
+              </p>
+            </div>
+          </div>
+
+         
+        </div>
+      </header>
+
+      <section className="text-center max-w-2xl mx-auto px-6 pt-10 pb-12">
+        <span className="inline-block bg-brand-light text-brand-dark text-xs font-semibold px-4 py-1.5 rounded-full mb-4 tracking-wide">
+          MCR • DIGITAL HOSPITAL PLATFORM
+        </span>
+        <h2 className="text-2xl sm:text-3xl font-bold text-brand-dark leading-tight">
+          One system, every department
+        </h2>
+        <p className="text-gray-500 mt-3 text-sm sm:text-base">
+          Connecting reception, doctors, lab, pharmacy and administration — all from one place.
+        </p>
+        <div className="relative max-w-sm mx-auto mt-5">
+          <input
+            type="text"
+            value={quickSearch}
+            onChange={(e) => setQuickSearch(e.target.value)}
+            placeholder="Quick lookup: Patient ID or Name"
+            className="w-full border border-gray-200 rounded-full px-4 py-2.5 text-sm shadow-soft focus:outline-none focus:ring-2 focus:ring-brand-DEFAULT"
+          />
+          {quickResults.length > 0 && (
+            <div className="absolute top-full left-0 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-card-hover z-10 overflow-hidden text-left">
+              {quickResults.map((p) => (
+                <div key={p.patient_id} className="px-4 py-2 text-xs border-b border-gray-50 last:border-0">
+                  <span className="font-medium text-brand-dark">{p.patient_id}</span> — {p.full_name}
+                  <span className="text-gray-400"> ({p.status})</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+      {error && <p className="text-center text-xs text-red-500 mt-4">{error}</p>}
+
+      <section className="max-w-4xl mx-auto px-6 pb-16">
+        <p className="text-center text-xs font-medium text-gray-400 mb-5 tracking-wide">
+          SELECT YOUR ROLE TO CONTINUE
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-5">
+         {roles.map((role) => (
+  <button
+    key={role.name}
+    onClick={() => { setSelectedRole(role.role); setError(""); setLoginUsername(""); setLoginPassword(""); }}
+    disabled={loggingIn !== null}
+    className="group bg-white border border-gray-100 rounded-card shadow-soft p-6 flex flex-col items-center text-center transition-all duration-200 hover:-translate-y-1 hover:shadow-card-hover cursor-pointer disabled:opacity-50 disabled:cursor-wait"
+  >
+              <span className={`w-16 h-16 rounded-2xl bg-${role.color}-light flex items-center justify-center text-3xl mb-3 group-hover:scale-110 transition-transform`}>
+                {role.icon}
+              </span>
+              <h3 className={`text-sm font-semibold text-${role.color}-dark`}>{role.name}</h3>
+             <p className="text-gray-400 text-xs mt-1 leading-tight">
+  {loggingIn === role.role ? "Logging in..." : role.desc}
+</p>
+            </button>
+          ))}
+        </div>
+        {selectedRole && (
+  <form
+    onSubmit={handleRoleLogin}
+    className="max-w-sm mx-auto mt-6 bg-white border border-gray-100 rounded-card shadow-card-hover p-6"
+  >
+    <p className="text-xs font-semibold text-gray-500 mb-3">
+      Logging in as {roles.find((r) => r.role === selectedRole)?.name}
+    </p>
+    <input
+      type="text" placeholder="Username" required autoFocus
+      value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)}
+      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mb-3"
+    />
+    <input
+      type="password" placeholder="Password" required
+      value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)}
+      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mb-3"
+    />
+    <div className="flex gap-2">
+      <button type="button" onClick={() => setSelectedRole(null)}
+        className="flex-1 border border-gray-200 text-gray-500 text-sm rounded-md py-2">
+        Cancel
+      </button>
+      <button type="submit" disabled={loggingIn !== null}
+        className="flex-1 bg-brand-DEFAULT text-white text-sm rounded-md py-2 disabled:opacity-50">
+        {loggingIn ? "Logging in..." : "Log In"}
+      </button>
+    </div>
+  </form>
+)}
+      </section>
+
+      <section className="bg-white border-t border-gray-100 py-16 px-6">
+        <div className="max-w-5xl mx-auto">
+          <p className="text-center text-sm font-medium text-gray-400 mb-2 tracking-wide">WHY MCR HMS</p>
+          <h2 className="text-2xl font-bold text-brand-dark text-center mb-10">Built for real hospital workflows</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {highlights.map((h) => (
+              <div key={h.title} className="bg-brand-light/40 rounded-card p-6 text-center hover:shadow-soft transition-shadow">
+                <div className="w-12 h-12 mx-auto rounded-xl bg-white flex items-center justify-center text-2xl shadow-soft mb-4">
+                  {h.icon}
+                </div>
+                <h3 className="text-sm font-semibold text-gray-800 mb-1.5">{h.title}</h3>
+                <p className="text-xs text-gray-500 leading-relaxed">{h.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <footer className="text-center py-8 px-6">
+        <p className="text-xs text-gray-400">MCR Multispeciality Hospital — Internal HMS Prototype</p>
+        <p className="text-xs text-gray-300 mt-1">Now backed by a live PostgreSQL database</p>
+      </footer>
+
+     
+    </div>
+  );
+}
+
+export default Landing;
+</file>
+
+<file path="src/pages/Nurse.jsx">
+import { useState } from "react";
+import DataTable from "../components/DataTable";
+import DashboardLayout from "../components/DashboardLayout";
+import SearchBar from "../components/SearchBar";
+import { usePatients } from "../context/PatientContext";
+import { useAuth } from "../context/AuthContext";
+import api from "../api/axios";
+
+const columns = ["Patient ID", "Name", "Age", "Gender", "Doctor", "Vitals & Notes"];
+
+function Nurse() {
+  const { patients } = usePatients();
+  const { user } = useAuth();
+  const [openId, setOpenId] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [vitalsList, setVitalsList] = useState([]);
+
+  const [bp, setBp] = useState("");
+  const [temp, setTemp] = useState("");
+  const [pulse, setPulse] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const loadVitals = async (visitId) => {
+    const { data } = await api.get(`/nurse/vitals/${visitId}`);
+    setVitalsList(data);
+  };
+
+  const openPatient = async (patient) => {
+    setOpenId(patient.patient_id);
+    setBp(""); setTemp(""); setPulse(""); setNotes("");
+    await loadVitals(patient.visit_id);
+  };
+
+  const closePatient = () => setOpenId(null);
+
+  const handleAddVitals = async (patient) => {
+    if (!bp.trim() && !temp.trim() && !pulse.trim() && !notes.trim()) return;
+    await api.post("/nurse/vitals", {
+      visit_id: patient.visit_id,
+      nurse_id: user?.staffId,
+      bp, temperature: temp, pulse, notes,
+    });
+    setBp(""); setTemp(""); setPulse(""); setNotes("");
+    await loadVitals(patient.visit_id);
+  };
+
+  const nursePatients = patients.filter((p) => p.nurse_id === user?.staffId);
+  const filteredPatients = nursePatients.filter(
+    (p) =>
+      p.patient_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.full_name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <DashboardLayout title="Nurse Dashboard" subtitle="Record vitals and care notes" icon="🩹" colorClass="nurse">
+      <SearchBar value={searchTerm} onChange={setSearchTerm} colorClass="nurse" />
+
+      <DataTable
+        columns={columns}
+        rows={filteredPatients}
+        roleColor="nurse"
+        renderRow={(patient) => (
+          <>
+            <tr key={patient.patient_id} className="border-t border-gray-100 hover:bg-gray-50 cursor-pointer"
+              onClick={() => (openId === patient.patient_id ? closePatient() : openPatient(patient))}>
+              <td className="px-4 py-3 font-medium text-nurse-dark whitespace-nowrap">{patient.patient_id}</td>
+              <td className="px-4 py-3 whitespace-nowrap">{patient.full_name}</td>
+              <td className="px-4 py-3 whitespace-nowrap">{patient.age}</td>
+              <td className="px-4 py-3 whitespace-nowrap">{patient.gender}</td>
+              <td className="px-4 py-3 whitespace-nowrap">{patient.doctor_name}</td>
+              <td className="px-4 py-3 text-xs text-nurse-dark underline">
+                {openId === patient.patient_id ? "▲ Hide" : "▼ Vitals"}
+              </td>
+            </tr>
+
+            {openId === patient.patient_id && (
+              <tr>
+                <td colSpan={columns.length} className="bg-nurse-light px-6 py-5">
+                  <div className="flex flex-col gap-5">
+                    <div>
+                      <label className="text-sm font-medium text-nurse-dark block mb-2">Vitals History</label>
+                      {vitalsList.length === 0 ? (
+                        <p className="text-xs text-gray-400">No vitals recorded yet.</p>
+                      ) : (
+                        <div className="flex flex-col gap-2">
+                          {vitalsList.map((v) => (
+                            <div key={v.vitals_id} className="bg-white border border-nurse-DEFAULT/40 rounded-md px-3 py-2 text-xs">
+                              <p className="font-medium text-nurse-dark mb-1">{new Date(v.recorded_at).toLocaleString()}</p>
+                              <p className="text-gray-600">BP: {v.bp || "—"} • Temp: {v.temperature || "—"} • Pulse: {v.pulse || "—"}</p>
+                              {v.notes && <p className="text-gray-600">Notes: {v.notes}</p>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="text-sm font-medium text-nurse-dark block mb-1">Record New Vitals</label>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
+                        <input type="text" value={bp} onChange={(e) => setBp(e.target.value)} placeholder="BP (e.g. 120/80)"
+                          className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-nurse-DEFAULT" />
+                        <input type="text" value={temp} onChange={(e) => setTemp(e.target.value)} placeholder="Temp (e.g. 98.6°F)"
+                          className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-nurse-DEFAULT" />
+                        <input type="text" value={pulse} onChange={(e) => setPulse(e.target.value)} placeholder="Pulse (e.g. 72 bpm)"
+                          className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-nurse-DEFAULT" />
+                      </div>
+                      <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Care notes / observations" rows={2}
+                        className="border border-gray-300 rounded-md px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-nurse-DEFAULT" />
+                    </div>
+
+                    <div className="flex justify-end">
+                      <button onClick={() => handleAddVitals(patient)} className="bg-nurse-dark text-white px-5 py-2 rounded-md text-sm font-medium hover:opacity-90">
+                        Save Vitals
+                      </button>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            )}
+          </>
+        )}
+      />
+    </DashboardLayout>
+  );
+}
+
+export default Nurse;
+</file>
+
+<file path="src/App.jsx">
+import { HashRouter, Routes, Route } from "react-router-dom";
+import { PatientProvider } from "./context/PatientContext";
+import Landing from "./pages/Landing";
+import Receptionist from "./pages/Receptionist";
+import Doctor from "./pages/Doctor";
+import Nurse from "./pages/Nurse";
+import LabTechnician from "./pages/LabTechnician";
+import Pharmacy from "./pages/Pharmacy";
+import Admin from "./pages/Admin";
+import { AuthProvider } from "./context/AuthContext";
+import ProtectedRoute from "./routes/ProtectedRoute";
+import { ToastProvider } from "./context/ToastContext";
+function App() {
+  return (
+     <ToastProvider>
+      <AuthProvider>
+    <PatientProvider>
+     
+        <HashRouter>
+         <Routes>
+  <Route path="/" element={<Landing />} />
+  <Route path="/receptionist" element={<ProtectedRoute role="receptionist"><Receptionist /></ProtectedRoute>} />
+  <Route path="/doctor" element={<ProtectedRoute role="doctor"><Doctor /></ProtectedRoute>} />
+  <Route path="/nurse" element={<ProtectedRoute role="nurse"><Nurse /></ProtectedRoute>} />
+ <Route path="/lab" element={<ProtectedRoute role="labtech"><LabTechnician /></ProtectedRoute>} />
+  <Route path="/pharmacy" element={<ProtectedRoute role="pharmacist"><Pharmacy /></ProtectedRoute>} />
+  <Route path="/admin" element={<ProtectedRoute role="admin"><Admin /></ProtectedRoute>} />
+</Routes>
+      </HashRouter>
+     
+    </PatientProvider>
+    </AuthProvider>
+    </ToastProvider>
+  );
+}
+
+export default App;
+</file>
+
+<file path="src/pages/Doctor.jsx">
+import { useState } from "react";
+import DataTable from "../components/DataTable";
+import DashboardLayout from "../components/DashboardLayout";
+import SearchBar from "../components/SearchBar";
+import { usePatients } from "../context/PatientContext";
+import { useLookups } from "../hooks/useLookups";
+import { useToast } from "../context/ToastContext";
+import { useAuth } from "../context/AuthContext";
+import api from "../api/axios";
+
+const columns = ["Patient ID", "Name", "Age", "Gender", "Diagnosis & Treatment"];
+
+function Doctor() {
+  const { patients, refresh, getPatient } = usePatients();
+    const { user } = useAuth();
+  const { tests, medicines } = useLookups();
+  const [openId, setOpenId] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const { showToast } = useToast();
+  const [diagnosis, setDiagnosis] = useState("");
+  const [selectedTestIds, setSelectedTestIds] = useState([]);
+  const [selectedMedId, setSelectedMedId] = useState("");
+  const [selectedMedQty, setSelectedMedQty] = useState(1);
+  const [prescribedMeds, setPrescribedMeds] = useState([]);
+  const [history, setHistory] = useState([]);
+
+  const openPatient = async (patient) => {
+    setOpenId(patient.patient_id);
+    setDiagnosis(patient.diagnosis || "");
+    setSelectedTestIds([]);
+    setPrescribedMeds([]);
+    const full = await getPatient(patient.patient_id);
+    setHistory(full.visits || []);
+  };
+
+  const closePatient = () => setOpenId(null);
+
+  const toggleTest = (testId) => {
+    setSelectedTestIds((prev) =>
+      prev.includes(testId) ? prev.filter((id) => id !== testId) : [...prev, testId]
+    );
+  };
+
+  const addMedicine = () => {
+    if (!selectedMedId) return;
+    setPrescribedMeds((prev) => [...prev, { medicine_id: selectedMedId, quantity: Number(selectedMedQty) || 1 }]);
+    setSelectedMedId("");
+    setSelectedMedQty(1);
+  };
+
+  const handleSaveDiagnosis = async (patient) => {
+    try {
+      await api.put(`/visits/${patient.visit_id}/consult`, {
+        diagnosis,
+        test_ids: selectedTestIds,
+        medicine_ids: prescribedMeds,
+      });
+      await refresh();
+      showToast("Patient diagnosed and saved");
+      closePatient();
+    } catch (err) {
+      showToast(err.response?.data?.error || "Failed to save", "error");
+    }
+  };
+
+ const myPatients = patients.filter((p) => p.doctor_id === user?.staffId);
+
+  const filteredPatients = myPatients.filter(
+    (p) =>
+      p.patient_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.full_name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const waitingQueue = myPatients
+    .filter((p) => p.status === "Admitted" && !p.diagnosis)
+    .sort((a, b) => (a.queue_number || 0) - (b.queue_number || 0));
+  return (
+    <DashboardLayout title="Doctor Dashboard" subtitle="Diagnose, recommend tests & prescribe" icon="🩺" colorClass="doctor">
+      {waitingQueue.length > 0 && (
+        <div className="mb-6 bg-white border border-gray-100 rounded-card shadow-soft p-5">
+          <h2 className="text-sm font-semibold text-doctor-dark mb-3">Today's Queue</h2>
+          <div className="flex flex-wrap gap-2">
+            {waitingQueue.map((p) => (
+              <div key={p.patient_id} className="flex items-center gap-2 bg-doctor-light/60 border border-doctor-DEFAULT/30 rounded-full pl-3 pr-1.5 py-1">
+                <span className="text-xs font-medium text-doctor-dark">#{p.queue_number} {p.full_name}</span>
+                <button onClick={() => openPatient(p)} className="text-[11px] bg-doctor-DEFAULT text-white px-2.5 py-1 rounded-full hover:opacity-90">
+                  Start
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <SearchBar value={searchTerm} onChange={setSearchTerm} colorClass="doctor" />
+
+      <DataTable
+        columns={columns}
+        rows={filteredPatients}
+        roleColor="doctor"
+        renderRow={(patient) => (
+          <>
+            <tr key={patient.patient_id} className="border-t border-gray-100 hover:bg-gray-50 cursor-pointer"
+              onClick={() => (openId === patient.patient_id ? closePatient() : openPatient(patient))}>
+              <td className="px-4 py-3 font-medium text-doctor-dark whitespace-nowrap">{patient.patient_id}</td>
+              <td className="px-4 py-3 whitespace-nowrap">{patient.full_name}</td>
+              <td className="px-4 py-3 whitespace-nowrap">{patient.age}</td>
+              <td className="px-4 py-3 whitespace-nowrap">{patient.gender}</td>
+              <td className="px-4 py-3 text-xs text-doctor-dark underline">
+                {openId === patient.patient_id ? "▲ Hide" : patient.diagnosis ? `View / Edit (${patient.diagnosis})` : "▼ Add Diagnosis"}
+              </td>
+            </tr>
+
+            {openId === patient.patient_id && (
+              <tr>
+                <td colSpan={columns.length} className="bg-doctor-light px-6 py-5">
+                  <div className="flex flex-col gap-5">
+                    <div>
+                      <label className="text-sm font-medium text-doctor-dark block mb-2">Visit History</label>
+                      {history.length <= 1 ? (
+                        <p className="text-xs text-gray-400">No previous visits recorded for this patient.</p>
+                      ) : (
+                        <div className="flex flex-col gap-2">
+                          {history.slice(1).map((v) => (
+                            <div key={v.visit_id} className="bg-white border border-doctor-DEFAULT/40 rounded-md px-3 py-2 text-xs">
+                              <p className="font-medium text-doctor-dark mb-1">{v.visit_date} — {v.doctor_name} ({v.department_name})</p>
+                              <p className="text-gray-600">Diagnosis: {v.diagnosis || "—"}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="text-sm font-medium text-doctor-dark block mb-1">Current Diagnosis</label>
+                      <input type="text" value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)}
+                        className="border border-gray-300 rounded-md px-3 py-2 text-sm w-full sm:w-1/2 focus:outline-none focus:ring-2 focus:ring-doctor-DEFAULT"
+                        placeholder="e.g. Viral Fever" />
+                    </div>
+
+                    <div>
+                      <label className="text-sm font-medium text-doctor-dark block mb-1">Tests Recommended</label>
+                      <div className="flex flex-wrap gap-2">
+                        {tests.map((t) => (
+                          <button key={t.test_id} type="button" onClick={() => toggleTest(t.test_id)}
+                            className={`text-xs px-3 py-1 rounded-full border ${selectedTestIds.includes(t.test_id) ? "bg-doctor-DEFAULT text-white border-doctor-DEFAULT" : "bg-white text-doctor-dark border-doctor-DEFAULT"}`}>
+                            {t.test_name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-sm font-medium text-doctor-dark block mb-1">Prescription</label>
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        {prescribedMeds.map((m, idx) => {
+                          const med = medicines.find((x) => x.medicine_id === Number(m.medicine_id));
+                          return (
+                            <span key={idx} className="bg-white border border-doctor-DEFAULT text-doctor-dark text-xs px-3 py-1 rounded-full">
+                              {med?.medicine_name} x{m.quantity}
+                            </span>
+                          );
+                        })}
+                      </div>
+                      <div className="flex gap-2">
+                        <select value={selectedMedId} onChange={(e) => setSelectedMedId(e.target.value)}
+                          className="border border-gray-300 rounded-md px-3 py-2 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-doctor-DEFAULT">
+                          <option value="">Select medicine</option>
+                          {medicines.map((m) => (
+                            <option key={m.medicine_id} value={m.medicine_id}>{m.medicine_name} (stock: {m.stock_qty})</option>
+                          ))}
+                        </select>
+                        <input type="number" min="1" value={selectedMedQty} onChange={(e) => setSelectedMedQty(e.target.value)}
+                          className="border border-gray-300 rounded-md px-3 py-2 text-sm w-20" />
+                        <button onClick={addMedicine} className="bg-doctor-DEFAULT text-white px-4 py-2 rounded-md text-sm hover:opacity-90">
+                          Add Medicine
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end">
+                      <button onClick={() => handleSaveDiagnosis(patient)} className="bg-doctor-dark text-white px-5 py-2 rounded-md text-sm font-medium hover:opacity-90">
+                        Save & Close
+                      </button>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            )}
+          </>
+        )}
+      />
+    </DashboardLayout>
+  );
+}
+
+export default Doctor;
+</file>
+
+<file path="src/pages/LabTechnician.jsx">
+import { useState, useEffect } from "react";
+import DashboardLayout from "../components/DashboardLayout";
+import SearchBar from "../components/SearchBar";
+import { useToast } from "../context/ToastContext";
+import api from "../api/axios";
+
+function LabTechnician() {
+  const [pending, setPending] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const { showToast } = useToast();
+  const [reportText, setReportText] = useState({});
+  const [cost, setCost] = useState({});
+
+  const loadPending = async () => {
+    const { data } = await api.get("/lab/pending");
+    setPending(data);
+  };
+
+  useEffect(() => { loadPending(); }, []);
+
+  const handleSubmitReport = async (item) => {
+    const key = `${item.visit_id}-${item.test_id}`;
+    if (!reportText[key]?.trim()) return;
+    try {
+      await api.post("/lab/report", {
+        visit_id: item.visit_id,
+        test_id: item.test_id,
+        report_text: reportText[key],
+        cost: Number(cost[key]) || 0,
+      });
+      showToast("Report submitted");
+      await loadPending();
+    } catch (err) {
+      showToast(err.response?.data?.error || "Failed to submit", "error");
+    }
+  };
+
+  const filteredPending = pending.filter(
+    (p) =>
+      p.patient_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.test_name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <DashboardLayout title="Lab Technician Dashboard" subtitle="Submit test reports and results" icon="🧪" colorClass="lab">
+      <SearchBar value={searchTerm} onChange={setSearchTerm} colorClass="lab" />
+
+      <div className="flex flex-col gap-4 mt-4">
+        {filteredPending.length === 0 ? (
+          <p className="text-sm text-gray-400">No pending tests.</p>
+        ) : (
+          filteredPending.map((item) => {
+            const key = `${item.visit_id}-${item.test_id}`;
+            return (
+              <div key={key} className="bg-white border border-gray-100 rounded-card shadow-soft p-5">
+                <p className="text-sm font-semibold text-lab-dark mb-2">{item.patient_name} — {item.test_name}</p>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input type="text" value={reportText[key] || ""} onChange={(e) => setReportText({ ...reportText, [key]: e.target.value })}
+                    placeholder="Report result / notes"
+                    className="border border-gray-300 rounded-md px-3 py-2 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-lab-DEFAULT" />
+                  <input type="number" value={cost[key] || ""} onChange={(e) => setCost({ ...cost, [key]: e.target.value })}
+                    placeholder="Cost (₹)"
+                    className="border border-gray-300 rounded-md px-3 py-2 text-sm sm:w-32 focus:outline-none focus:ring-2 focus:ring-lab-DEFAULT" />
+                  <button onClick={() => handleSubmitReport(item)} className="bg-lab-DEFAULT text-white px-4 py-2 rounded-md text-sm hover:opacity-90">
+                    Submit Report
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </DashboardLayout>
+  );
+}
+
+export default LabTechnician;
+</file>
+
+<file path="src/pages/Pharmacy.jsx">
+import { useState, useEffect } from "react";
+import DashboardLayout from "../components/DashboardLayout";
+import SearchBar from "../components/SearchBar";
+import { useToast } from "../context/ToastContext";
+import api from "../api/axios";
+
+function Pharmacy() {
+  const [pending, setPending] = useState([]);
+  const [stock, setStock] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const { showToast } = useToast();
+
+  const loadData = async () => {
+    const [p, s] = await Promise.all([api.get("/pharmacy/pending"), api.get("/pharmacy/stock")]);
+    setPending(p.data);
+    setStock(s.data);
+  };
+
+  useEffect(() => { loadData(); }, []);
+
+  const handleDispense = async (prescriptionId) => {
+    try {
+      await api.put(`/pharmacy/${prescriptionId}/dispense`);
+      showToast("Medicine dispensed successfully!");
+      await loadData();
+    } catch (err) {
+      showToast(err.response?.data?.error || "Failed to dispense", "error");
+    }
+  };
+
+  const filteredPending = pending.filter(
+    (p) =>
+      p.patient_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.medicine_name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <DashboardLayout title="Pharmacy Dashboard" subtitle="Dispense prescribed medicines" icon="💊" colorClass="pharmacy">
+      <SearchBar value={searchTerm} onChange={setSearchTerm} colorClass="pharmacy" />
+
+      <h2 className="text-lg font-semibold text-gray-700 mb-3 mt-4">Pending Prescriptions</h2>
+      <div className="bg-white border border-gray-100 rounded-card shadow-soft overflow-hidden mb-8">
+        <table className="w-full text-sm">
+          <thead className="bg-pharmacy-light text-pharmacy-dark text-xs uppercase">
+            <tr>
+              <th className="px-4 py-3 text-left">Patient</th>
+              <th className="px-4 py-3 text-left">Medicine</th>
+              <th className="px-4 py-3 text-left">Quantity</th>
+              <th className="px-4 py-3 text-left">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredPending.length === 0 ? (
+              <tr><td colSpan={4} className="px-4 py-4 text-gray-400 text-xs">Nothing pending.</td></tr>
+            ) : (
+              filteredPending.map((p) => (
+                <tr key={p.prescription_id} className="border-t border-gray-100">
+                  <td className="px-4 py-3">{p.patient_name}</td>
+                  <td className="px-4 py-3">{p.medicine_name}</td>
+                  <td className="px-4 py-3">{p.quantity}</td>
+                  <td className="px-4 py-3">
+                    <button onClick={() => handleDispense(p.prescription_id)}
+                      className="bg-pharmacy-DEFAULT text-white px-3 py-1.5 rounded-md text-xs hover:opacity-90">
+                      Dispense
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <h2 className="text-lg font-semibold text-gray-700 mb-3">Medicine Stock</h2>
+      <div className="bg-white border border-gray-100 rounded-card shadow-soft overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-pharmacy-light text-pharmacy-dark text-xs uppercase">
+            <tr>
+              <th className="px-4 py-3 text-left">Medicine</th>
+              <th className="px-4 py-3 text-left">Unit Price</th>
+              <th className="px-4 py-3 text-left">Stock</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stock.map((m) => (
+              <tr key={m.medicine_id} className="border-t border-gray-100">
+                <td className="px-4 py-3">{m.medicine_name}</td>
+                <td className="px-4 py-3">₹{m.unit_price}</td>
+                <td className={`px-4 py-3 ${m.stock_qty < 20 ? "text-red-500 font-semibold" : ""}`}>{m.stock_qty}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </DashboardLayout>
+  );
+}
+
+export default Pharmacy;
+</file>
+
+<file path="src/pages/Receptionist.jsx">
+import { useState } from "react";
+import DataTable from "../components/DataTable";
+import DashboardLayout from "../components/DashboardLayout";
+import SearchBar from "../components/SearchBar";
+import { usePatients } from "../context/PatientContext";
+import { useToast } from "../context/ToastContext";
+import { useLookups } from "../hooks/useLookups";
+import api from "../api/axios";
+
+const columns = [
+  "Queue #", "Patient ID", "Name", "Age", "Gender",
+  "Doctor Assigned", "Nurse Assigned", "Date", "Status", "Billing",
+];
+
+function Receptionist() {
+  const { patients, addPatient, refresh } = usePatients();
+  const { doctors, nurses } = useLookups();
+  const [printBillId, setPrintBillId] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const { showToast } = useToast();
+  const [formMode, setFormMode] = useState("new");
+
+  const [name, setName] = useState("");
+  const [age, setAge] = useState("");
+  const [gender, setGender] = useState("");
+  const [doctorId, setDoctorId] = useState("");
+  const [nurseId, setNurseId] = useState("");
+  const [returningPatientId, setReturningPatientId] = useState("");
+
+  const resetForm = () => {
+    setName(""); setAge(""); setGender("");
+    setDoctorId(""); setNurseId(""); setReturningPatientId("");
+  };
+
+  const handleAddNewPatient = async (e) => {
+    e.preventDefault();
+    if (!name || !age || !gender || !doctorId || !nurseId) return;
+    try {
+      const patient = await addPatient({ full_name: name, age: Number(age), gender, phone: "" });
+      await api.post("/visits", { patient_id: patient.patient_id, doctor_id: doctorId, nurse_id: nurseId });
+      await refresh();
+      showToast(`Patient ${patient.full_name} registered`);
+      resetForm();
+    } catch (err) {
+      showToast(err.response?.data?.error || "Failed to register patient", "error");
+    }
+  };
+
+  const handleReadmitPatient = async (e) => {
+    e.preventDefault();
+    if (!returningPatientId || !doctorId || !nurseId) return;
+    try {
+      await api.post("/visits", { patient_id: returningPatientId, doctor_id: doctorId, nurse_id: nurseId });
+      await refresh();
+      showToast("Patient re-admitted");
+      resetForm();
+    } catch (err) {
+      showToast(err.response?.data?.error || "Failed to re-admit patient", "error");
+    }
+  };
+
+  const handleDischarge = async (visitId) => {
+    try {
+      await api.put(`/visits/${visitId}/discharge`);
+      await refresh();
+      showToast("Patient discharged and billed");
+    } catch (err) {
+      showToast(err.response?.data?.error || "Failed to discharge", "error");
+    }
+  };
+
+  const filteredPatients = patients.filter(
+    (p) =>
+      p.patient_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.full_name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <DashboardLayout title="Receptionist Dashboard" subtitle="Manage patient appointments and billing" icon="📋" colorClass="reception">
+      <div className="mb-4 flex gap-2">
+        <button
+          onClick={() => { setFormMode("new"); resetForm(); }}
+          className={`px-5 py-2 rounded-full text-sm font-medium transition ${formMode === "new" ? "bg-reception-DEFAULT text-white" : "bg-white text-gray-500 border border-gray-200"}`}
+        >
+          🆕 New Patient
+        </button>
+        <button
+          onClick={() => { setFormMode("returning"); resetForm(); }}
+          className={`px-5 py-2 rounded-full text-sm font-medium transition ${formMode === "returning" ? "bg-reception-DEFAULT text-white" : "bg-white text-gray-500 border border-gray-200"}`}
+        >
+          🔁 Returning Patient
+        </button>
+      </div>
+
+      <div className="mb-8">
+        <h2 className="text-lg font-semibold text-gray-700 mb-3">
+          {formMode === "new" ? "Register New Patient" : "Re-admit Returning Patient"}
+        </h2>
+
+        {formMode === "new" ? (
+          <form onSubmit={handleAddNewPatient} className="bg-white border border-gray-100 rounded-card shadow-soft p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="flex flex-col">
+              <label className="text-sm font-medium text-gray-600 mb-1">Name</label>
+              <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Patient name" required
+                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-reception-DEFAULT" />
+            </div>
+            <div className="flex flex-col">
+              <label className="text-sm font-medium text-gray-600 mb-1">Age</label>
+              <input type="number" value={age} onChange={(e) => setAge(e.target.value)} placeholder="Age" required
+                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-reception-DEFAULT" />
+            </div>
+            <div className="flex flex-col">
+              <label className="text-sm font-medium text-gray-600 mb-1">Gender</label>
+              <select value={gender} onChange={(e) => setGender(e.target.value)} required
+                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-reception-DEFAULT">
+                <option value="">Select Gender</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div className="flex flex-col">
+              <label className="text-sm font-medium text-gray-600 mb-1">Doctor Assigned</label>
+              <select value={doctorId} onChange={(e) => setDoctorId(e.target.value)} required
+                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-reception-DEFAULT">
+                <option value="">Select Doctor</option>
+                {doctors.map((d) => (
+                  <option key={d.doctor_id} value={d.doctor_id}>{d.full_name} — {d.department_name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col">
+              <label className="text-sm font-medium text-gray-600 mb-1">Nurse Assigned</label>
+              <select value={nurseId} onChange={(e) => setNurseId(e.target.value)} required
+                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-reception-DEFAULT">
+                <option value="">Select Nurse</option>
+                {nurses.map((n) => (
+                  <option key={n.nurse_id} value={n.nurse_id}>{n.full_name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="lg:col-span-3 flex justify-end">
+              <button type="submit" className="bg-reception-DEFAULT text-white px-6 py-2.5 rounded-md text-sm font-medium hover:bg-reception-dark transition">
+                Register Patient
+              </button>
+            </div>
+          </form>
+        ) : (
+          <form onSubmit={handleReadmitPatient} className="bg-white border border-gray-100 rounded-card shadow-soft p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="flex flex-col lg:col-span-2">
+              <label className="text-sm font-medium text-gray-600 mb-1">Search Existing Patient</label>
+              <select value={returningPatientId} onChange={(e) => setReturningPatientId(e.target.value)} required
+                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-reception-DEFAULT">
+                <option value="">Select Patient ID / Name</option>
+                {patients.map((p) => (
+                  <option key={p.patient_id} value={p.patient_id}>{p.patient_id} — {p.full_name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col">
+              <label className="text-sm font-medium text-gray-600 mb-1">Doctor Assigned</label>
+              <select value={doctorId} onChange={(e) => setDoctorId(e.target.value)} required
+                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-reception-DEFAULT">
+                <option value="">Select Doctor</option>
+                {doctors.map((d) => (
+                  <option key={d.doctor_id} value={d.doctor_id}>{d.full_name} — {d.department_name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col">
+              <label className="text-sm font-medium text-gray-600 mb-1">Nurse Assigned</label>
+              <select value={nurseId} onChange={(e) => setNurseId(e.target.value)} required
+                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-reception-DEFAULT">
+                <option value="">Select Nurse</option>
+                {nurses.map((n) => (
+                  <option key={n.nurse_id} value={n.nurse_id}>{n.full_name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="lg:col-span-4 flex justify-end">
+              <button type="submit" className="bg-reception-DEFAULT text-white px-6 py-2.5 rounded-md text-sm font-medium hover:bg-reception-dark transition">
+                Re-admit Patient
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+
+      <h2 className="text-lg font-semibold text-gray-700 mb-3">Patient Records</h2>
+      <SearchBar value={searchTerm} onChange={setSearchTerm} colorClass="reception" />
+
+      <DataTable
+        columns={columns}
+        rows={filteredPatients}
+        roleColor="reception"
+        renderRow={(patient) => (
+          <tr key={patient.patient_id} className="border-t border-gray-100 hover:bg-gray-50">
+            <td className="px-4 py-3 whitespace-nowrap">
+              {patient.queue_number ? (
+                <span className="bg-reception-light text-reception-dark text-xs font-semibold px-2.5 py-1 rounded-full">
+                  #{patient.queue_number}
+                </span>
+              ) : <span className="text-gray-300 text-xs">—</span>}
+            </td>
+            <td className="px-4 py-3 font-medium text-reception-dark whitespace-nowrap">{patient.patient_id}</td>
+            <td className="px-4 py-3 whitespace-nowrap">{patient.full_name}</td>
+            <td className="px-4 py-3 whitespace-nowrap">{patient.age}</td>
+            <td className="px-4 py-3 whitespace-nowrap">{patient.gender}</td>
+            <td className="px-4 py-3 whitespace-nowrap">
+              {patient.doctor_name}
+              <span className="text-xs text-gray-400 block">{patient.department_name}</span>
+            </td>
+            <td className="px-4 py-3 whitespace-nowrap">{patient.nurse_name}</td>
+            <td className="px-4 py-3 whitespace-nowrap">{patient.visit_date}</td>
+            <td className="px-4 py-3 whitespace-nowrap">
+              {patient.status === "Discharged" ? (
+                <span className="bg-gray-100 text-gray-500 text-xs font-medium px-2.5 py-1 rounded-full">Discharged</span>
+              ) : (
+                <div className="flex flex-col gap-1 items-start">
+                  <span className="bg-reception-light text-reception-dark text-xs font-medium px-2.5 py-1 rounded-full">Admitted</span>
+                  <button onClick={() => handleDischarge(patient.visit_id)} className="text-[11px] text-gray-400 underline hover:text-gray-600">
+                    Discharge & Generate Bill
+                  </button>
+                </div>
+              )}
+            </td>
+            <td className="px-4 py-3 whitespace-nowrap">
+              {patient.total_amount ? (
+                <div className="flex flex-col gap-1 items-start">
+                  <span className="text-xs">Total: ₹{patient.total_amount} ({patient.payment_status})</span>
+                  <button onClick={() => setPrintBillId(patient.patient_id)} className="text-reception-dark underline text-xs">
+                    🖨 Print Bill
+                  </button>
+                </div>
+              ) : (
+                <span className="text-gray-400 text-xs">Not billed yet</span>
+              )}
+            </td>
+          </tr>
+        )}
+      />
+
+      {printBillId && (
+        <PrintBillModal
+          patient={patients.find((p) => p.patient_id === printBillId)}
+          onClose={() => setPrintBillId(null)}
+        />
+      )}
+    </DashboardLayout>
+  );
+}
+
+function PrintBillModal({ patient, onClose }) {
+  if (!patient) return null;
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4 print:bg-white">
+      <div className="bg-white rounded-card shadow-card-hover max-w-md w-full p-8 relative print:shadow-none">
+        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-700 print:hidden">✕</button>
+        <div className="text-center mb-6">
+          <div className="w-12 h-12 mx-auto rounded-xl bg-brand-DEFAULT text-white flex items-center justify-center text-xl font-bold mb-2">✚</div>
+          <h2 className="text-lg font-bold text-brand-dark">MCR Multispeciality Hospital</h2>
+          <p className="text-xs text-gray-400">Patient Invoice</p>
+        </div>
+        <div className="text-sm text-gray-700 space-y-1 mb-4">
+          <p><strong>Patient ID:</strong> {patient.patient_id}</p>
+          <p><strong>Name:</strong> {patient.full_name}</p>
+          <p><strong>Age / Gender:</strong> {patient.age} / {patient.gender}</p>
+          <p><strong>Doctor:</strong> {patient.doctor_name} ({patient.department_name})</p>
+          <p><strong>Date:</strong> {patient.visit_date}</p>
+        </div>
+        <div className="border-t border-gray-200 pt-3 text-sm space-y-1.5">
+          <div className="flex justify-between"><span>Consultation Fee</span><span>₹{patient.consultation_fee || 0}</span></div>
+          <div className="flex justify-between"><span>Lab Charges</span><span>₹{patient.lab_total || 0}</span></div>
+          <div className="flex justify-between"><span>Pharmacy Charges</span><span>₹{patient.pharmacy_total || 0}</span></div>
+          <div className="flex justify-between font-bold text-brand-dark text-base border-t border-gray-200 pt-2 mt-2">
+            <span>Total</span><span>₹{patient.total_amount || 0}</span>
+          </div>
+        </div>
+        <button onClick={() => window.print()} className="w-full mt-6 bg-brand-DEFAULT text-white py-2.5 rounded-md text-sm font-medium hover:bg-brand-dark transition print:hidden">
+          Print
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default Receptionist;
+</file>
+
+<file path="src/pages/Admin.jsx">
+import { useState, useEffect } from "react";
+import DashboardLayout from "../components/DashboardLayout";
+import SearchBar from "../components/SearchBar";
+import { usePatients } from "../context/PatientContext";
+import api from "../api/axios";
+
+function Admin() {
+ const { patients, refresh } = usePatients();
+  const [searchTerm, setSearchTerm] = useState("");
+  const [revenue, setRevenue] = useState([]);
+  const [lowStock, setLowStock] = useState([]);
+  const [topMeds, setTopMeds] = useState([]);
+  const [doctorLoad, setDoctorLoad] = useState([]);
+
+const [staff, setStaff] = useState([]);
+const [departments, setDepartments] = useState([]);
+const [showAddStaff, setShowAddStaff] = useState(false);
+const [staffForm, setStaffForm] = useState({
+  role: "doctor",
+  full_name: "",
+  department_id: "",
+  consultation_fee: "",
+  joining_date: "",
+  salary: "",
+});
+const [staffError, setStaffError] = useState("");
+const [newCredentials, setNewCredentials] = useState(null); // { username, temp_password, full_name }
+
+const loadStaff = () => {
+  api.get("/admin/staff").then((r) => setStaff(r.data));
+};
+
+const [auditLog, setAuditLog] = useState([]);
+const loadAuditLog = () => {
+  api.get("/admin/audit-log").then((r) => setAuditLog(r.data));
+};
+
+const handleMarkPaid = async (patient) => {
+  await api.put(`/admin/billing/${patient.visit_id}/payment`, { payment_status: "Paid" });
+  await Promise.all([refresh(), loadAuditLog()]);
+};
+
+useEffect(() => {
+  loadStaff();
+  loadAuditLog();
+  api.get("/admin/departments").then((r) => setDepartments(r.data));
+}, []);
+// `patients` here comes from usePatients() at the top of the component,
+// which already has a refresh() method — call it after a payment update
+// so the table reflects the new status immediately.
+async function refreshPatientsIfAny() {
+  // usePatients() already exposes this; if you destructured it as `refresh`
+  // above, just call refresh() directly here instead of this wrapper.
+}
+
+useEffect(() => {
+  loadStaff();
+  loadAuditLog();
+  api.get("/admin/departments").then((r) => setDepartments(r.data));
+}, []);
+
+const handleAddStaff = async (e) => {
+  e.preventDefault();
+  setStaffError("");
+  try {
+    const { data } = await api.post("/admin/staff", staffForm);
+    setNewCredentials({
+      full_name: staffForm.full_name,
+      username: data.username,
+      temp_password: data.temp_password,
+    });
+    setStaffForm({
+      role: "doctor",
+      full_name: "",
+      department_id: "",
+      consultation_fee: "",
+      joining_date: "",
+      salary: "",
+    });
+    setShowAddStaff(false);
+    loadStaff();
+  } catch (err) {
+    setStaffError(err.response?.data?.error || "Could not add staff member");
+  }
+};
+const handleToggleStatus = async (member) => {
+  await api.put(`/admin/staff/${member.role}/${member.staff_id}/status`, {
+    is_active: !member.is_active,
+  });
+  loadStaff();
+};
+
+const handleSalaryChange = (staff_id, value) => {
+  setStaff((prev) =>
+    prev.map((m) => (m.staff_id === staff_id ? { ...m, salary: value } : m))
+  );
+};
+
+const handleSalarySave = async (member) => {
+  await api.put(`/admin/staff/${member.role}/${member.staff_id}`, {
+    salary: member.salary,
+  });
+  loadStaff();
+};
+  useEffect(() => {
+    api.get("/reports/revenue-by-department").then((r) => setRevenue(r.data));
+    api.get("/reports/low-stock").then((r) => setLowStock(r.data));
+    api.get("/reports/top-medicines").then((r) => setTopMeds(r.data));
+    api.get("/reports/doctor-load").then((r) => setDoctorLoad(r.data));
+  }, []);
+
+  const totalPatients = patients.length;
+  const totalRevenue = revenue.reduce((sum, r) => sum + Number(r.total_revenue || 0), 0);
+
+  const statCards = [
+    { label: "Total Patients", value: totalPatients, icon: "🧑‍🤝‍🧑", color: "admin" },
+    { label: "Total Revenue", value: `₹${totalRevenue}`, icon: "💰", color: "reception" },
+    { label: "Low Stock Medicines", value: lowStock.length, icon: "💊", color: "pharmacy" },
+    { label: "Active Doctors", value: doctorLoad.length, icon: "🩺", color: "doctor" },
+  ];
+
+  const filteredPatients = patients.filter(
+    (p) =>
+      p.patient_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.full_name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <DashboardLayout title="Admin Dashboard" subtitle="Full hospital overview, all departments" icon="🗂️" colorClass="admin">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        {statCards.map((s) => (
+          <div key={s.label} className="bg-white border border-gray-100 rounded-card shadow-soft p-5 flex items-center gap-4">
+            <div className={`w-11 h-11 rounded-xl bg-${s.color}-light flex items-center justify-center text-xl`}>{s.icon}</div>
+            <div>
+              <p className="text-xs text-gray-500">{s.label}</p>
+              <p className={`text-xl font-bold text-${s.color}-dark`}>{s.value}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <div className="bg-white border border-gray-100 rounded-card shadow-soft p-5">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Revenue by Department</h3>
+          {revenue.map((r) => (
+            <div key={r.department_name} className="flex justify-between text-sm py-1.5 border-b border-gray-50 last:border-0">
+              <span>{r.department_name}</span>
+              <span className="font-medium">₹{r.total_revenue} ({r.visit_count} visits)</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="bg-white border border-gray-100 rounded-card shadow-soft p-5">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Top Prescribed Medicines</h3>
+          {topMeds.map((m) => (
+            <div key={m.medicine_name} className="flex justify-between text-sm py-1.5 border-b border-gray-50 last:border-0">
+              <span>{m.medicine_name}</span>
+              <span className="font-medium">{m.total_prescribed} units</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="bg-white border border-gray-100 rounded-card shadow-soft p-5">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Doctor Patient Load</h3>
+          {doctorLoad.map((d) => (
+            <div key={d.full_name} className="flex justify-between text-sm py-1.5 border-b border-gray-50 last:border-0">
+              <span>{d.full_name}</span>
+              <span className="font-medium">{d.total_patients}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="bg-white border border-gray-100 rounded-card shadow-soft p-5">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Low Stock Alerts</h3>
+          {lowStock.length === 0 ? (
+            <p className="text-xs text-gray-400">All medicines well stocked.</p>
+          ) : (
+            lowStock.map((m) => (
+              <div key={m.medicine_id} className="flex justify-between text-sm py-1.5 border-b border-gray-50 last:border-0 text-red-500">
+                <span>{m.medicine_name}</span>
+                <span className="font-medium">{m.stock_qty} left</span>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between mb-3">
+  <h2 className="text-lg font-semibold text-gray-700">Staff Management</h2>
+  <button
+    onClick={() => setShowAddStaff((v) => !v)}
+    className="bg-admin-dark text-white text-sm font-medium px-4 py-2 rounded-md hover:opacity-90"
+  >
+    {showAddStaff ? "Cancel" : "+ Recruit Staff"}
+  </button>
+</div>
+
+{showAddStaff && (
+  <form
+    onSubmit={handleAddStaff}
+    className="bg-white border border-gray-100 rounded-card shadow-soft p-5 mb-6 grid grid-cols-2 md:grid-cols-3 gap-4"
+  >
+    <div>
+      <label className="text-xs text-gray-500">Role</label>
+      <select
+        value={staffForm.role}
+        onChange={(e) => setStaffForm({ ...staffForm, role: e.target.value })}
+        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mt-1"
+      >
+        <option value="doctor">Doctor</option>
+        <option value="nurse">Nurse</option>
+      </select>
+    </div>
+
+    <div>
+      <label className="text-xs text-gray-500">Full Name</label>
+      <input
+        required
+        value={staffForm.full_name}
+        onChange={(e) => setStaffForm({ ...staffForm, full_name: e.target.value })}
+        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mt-1"
+      />
+    </div>
+
+    {staffForm.role === "doctor" && (
+      <div>
+        <label className="text-xs text-gray-500">Department</label>
+       <select
+          required
+          value={staffForm.department_id}
+          onChange={(e) => setStaffForm({ ...staffForm, department_id: e.target.value })}
+          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mt-1"
+        >
+          <option value="">Select department</option>
+          {departments.map((d) => (
+            <option key={d.department_id} value={d.department_id}>
+              {d.department_name}
+            </option>
+          ))}
+        </select>
+      </div>
+    )}
+
+    {staffForm.role === "doctor" && (
+      <div>
+        <label className="text-xs text-gray-500">Consultation Fee (₹)</label>
+        <input
+          type="number"
+          value={staffForm.consultation_fee}
+          onChange={(e) => setStaffForm({ ...staffForm, consultation_fee: e.target.value })}
+          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mt-1"
+        />
+      </div>
+    )}
+
+    <div>
+      <label className="text-xs text-gray-500">Joining Date</label>
+      <input
+        type="date"
+        required
+        value={staffForm.joining_date}
+        onChange={(e) => setStaffForm({ ...staffForm, joining_date: e.target.value })}
+        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mt-1"
+      />
+    </div>
+
+    <div>
+      <label className="text-xs text-gray-500">Salary (₹/month)</label>
+      <input
+        type="number"
+        required
+        value={staffForm.salary}
+        onChange={(e) => setStaffForm({ ...staffForm, salary: e.target.value })}
+        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mt-1"
+      />
+    </div>
+
+    {staffError && <p className="text-xs text-red-500 col-span-full">{staffError}</p>}
+
+    <div className="col-span-full flex justify-end">
+      <button type="submit" className="bg-brand-DEFAULT text-white text-sm px-5 py-2 rounded-md">
+        Save Staff Member
+      </button>
+    </div>
+  </form>
+)}
+
+<div className="bg-white border border-gray-100 rounded-card shadow-soft overflow-x-auto mb-8">
+  <table className="w-full text-sm">
+    <thead className="bg-admin-light text-admin-dark text-xs uppercase">
+      <tr>
+        <th className="px-4 py-3 text-left">Name</th>
+        <th className="px-4 py-3 text-left">Role</th>
+        <th className="px-4 py-3 text-left">Department</th>
+        <th className="px-4 py-3 text-left">Joining Date</th>
+        <th className="px-4 py-3 text-left">Salary</th>
+        <th className="px-4 py-3 text-left">Status</th>
+        <th className="px-4 py-3 text-left">Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {staff.map((m) => (
+        <tr key={`${m.role}-${m.staff_id}`} className="border-t border-gray-100">
+          <td className="px-4 py-3">{m.full_name}</td>
+          <td className="px-4 py-3 capitalize">{m.role}</td>
+          <td className="px-4 py-3">{m.department_name || "—"}</td>
+          <td className="px-4 py-3">
+            {m.joining_date ? new Date(m.joining_date).toLocaleDateString() : "—"}
+          </td>
+          <td className="px-4 py-3">
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                value={m.salary ?? ""}
+                onChange={(e) => handleSalaryChange(m.staff_id, e.target.value)}
+                className="w-24 border border-gray-300 rounded-md px-2 py-1 text-xs"
+              />
+              <button onClick={() => handleSalarySave(m)} className="text-xs text-brand-dark underline">
+                Save
+              </button>
+            </div>
+          </td>
+          <td className="px-4 py-3">
+            <span
+              className={`text-xs px-2 py-1 rounded-full ${
+                m.is_active ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"
+              }`}
+            >
+              {m.is_active ? "Active" : "Inactive"}
+            </span>
+          </td>
+          <td className="px-4 py-3">
+            <button onClick={() => handleToggleStatus(m)} className="text-xs font-medium underline text-gray-600">
+              {m.is_active ? "Mark Inactive" : "Reactivate"}
+            </button>
+          </td>
+        </tr>
+      ))}
+      {staff.length === 0 && (
+        <tr>
+          <td colSpan="7" className="px-4 py-6 text-center text-gray-400 text-xs">
+            No staff records yet.
+          </td>
+        </tr>
+      )}
+    </tbody>
+  </table>
+</div>
+
+<h2 className="text-lg font-semibold text-gray-700 mb-3">All Patients</h2>
+      <SearchBar value={searchTerm} onChange={setSearchTerm} colorClass="admin" />
+
+    <div className="bg-white border border-gray-100 rounded-card shadow-soft overflow-x-auto mt-4">
+  <table className="w-full text-sm">
+    <thead className="bg-admin-light text-admin-dark text-xs uppercase">
+      <tr>
+        <th className="px-4 py-3 text-left">Patient ID</th>
+        <th className="px-4 py-3 text-left">Name</th>
+        <th className="px-4 py-3 text-left">Age</th>
+        <th className="px-4 py-3 text-left">Gender</th>
+        <th className="px-4 py-3 text-left">Department</th>
+        <th className="px-4 py-3 text-left">Doctor</th>
+        <th className="px-4 py-3 text-left">Nurse</th>
+        <th className="px-4 py-3 text-left">Visit Date</th>
+        <th className="px-4 py-3 text-left">Diagnosis</th>
+        <th className="px-4 py-3 text-left">Consultation</th>
+        <th className="px-4 py-3 text-left">Lab</th>
+        <th className="px-4 py-3 text-left">Pharmacy</th>
+        <th className="px-4 py-3 text-left">Total Bill</th>
+        <th className="px-4 py-3 text-left">Payment</th>
+        <th className="px-4 py-3 text-left">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {filteredPatients.map((p) => (
+        <tr key={p.patient_id} className="border-t border-gray-100">
+          <td className="px-4 py-3">{p.patient_id}</td>
+          <td className="px-4 py-3">{p.full_name}</td>
+          <td className="px-4 py-3">{p.age ?? "—"}</td>
+          <td className="px-4 py-3">{p.gender ?? "—"}</td>
+          <td className="px-4 py-3">{p.department_name ?? "—"}</td>
+          <td className="px-4 py-3">{p.doctor_name ?? "—"}</td>
+          <td className="px-4 py-3">{p.nurse_name ?? "—"}</td>
+          <td className="px-4 py-3">
+            {p.visit_date ? new Date(p.visit_date).toLocaleDateString() : "—"}
+          </td>
+          <td className="px-4 py-3">{p.diagnosis ?? "—"}</td>
+          <td className="px-4 py-3">₹{p.consultation_fee ?? 0}</td>
+          <td className="px-4 py-3">₹{p.lab_total ?? 0}</td>
+          <td className="px-4 py-3">₹{p.pharmacy_total ?? 0}</td>
+          <td className="px-4 py-3 font-medium">₹{p.total_amount ?? 0}</td>
+        <td className="px-4 py-3">
+            <div className="flex flex-col items-start gap-1">
+              <span
+                className={`text-xs px-2 py-1 rounded-full ${
+                  p.payment_status === "Paid"
+                    ? "bg-green-100 text-green-700"
+                    : "bg-yellow-100 text-yellow-700"
+                }`}
+              >
+                {p.payment_status ?? "Pending"}
+              </span>
+              {p.payment_status !== "Paid" && p.total_amount ? (
+                <button
+                  onClick={() => handleMarkPaid(p)}
+                  className="text-[11px] text-brand-dark underline"
+                >
+                  Mark Payment Done
+                </button>
+              ) : null}
+            </div>
+          </td>
+          <td className="px-4 py-3">{p.status}</td>
+        </tr>
+      ))}
+      {filteredPatients.length === 0 && (
+        <tr>
+          <td colSpan="15" className="px-4 py-6 text-center text-gray-400 text-xs">
+            No patients found.
+          </td>
+        </tr>
+      )}
+    </tbody>
+  </table>
+</div>
+{newCredentials && (
+  <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+    <div className="bg-white rounded-card shadow-card-hover max-w-sm w-full p-6">
+      <h3 className="text-sm font-semibold text-gray-700 mb-2">Staff account created</h3>
+      <p className="text-xs text-gray-500 mb-4">
+        Share these login details with {newCredentials.full_name}. This password is shown only once.
+      </p>
+      <div className="bg-gray-50 rounded-md p-3 text-sm mb-4 space-y-1">
+        <p><span className="text-gray-400">Username:</span> <strong>{newCredentials.username}</strong></p>
+        <p><span className="text-gray-400">Password:</span> <strong>{newCredentials.temp_password}</strong></p>
+      </div>
+      <button
+        onClick={() => setNewCredentials(null)}
+        className="w-full bg-admin-dark text-white text-sm rounded-md py-2"
+      >
+        Done
+      </button>
+    </div>
+  </div>
+)}
+<h2 className="text-lg font-semibold text-gray-700 mb-3 mt-8">Activity Log</h2>
+<div className="bg-white border border-gray-100 rounded-card shadow-soft overflow-x-auto mb-8">
+  <table className="w-full text-sm">
+    <thead className="bg-admin-light text-admin-dark text-xs uppercase">
+      <tr>
+        <th className="px-4 py-3 text-left">Time</th>
+        <th className="px-4 py-3 text-left">Action</th>
+        <th className="px-4 py-3 text-left">Details</th>
+        <th className="px-4 py-3 text-left">By</th>
+      </tr>
+    </thead>
+    <tbody>
+      {auditLog.map((log) => (
+        <tr key={log.log_id} className="border-t border-gray-100">
+          <td className="px-4 py-3 text-xs whitespace-nowrap">
+            {new Date(log.created_at).toLocaleString()}
+          </td>
+          <td className="px-4 py-3 text-xs capitalize">{log.action.replaceAll("_", " ")}</td>
+          <td className="px-4 py-3 text-xs">{log.details}</td>
+          <td className="px-4 py-3 text-xs">{log.performed_by}</td>
+        </tr>
+      ))}
+      {auditLog.length === 0 && (
+        <tr><td colSpan="4" className="px-4 py-6 text-center text-gray-400 text-xs">No activity yet.</td></tr>
+      )}
+    </tbody>
+  </table>
+</div>
+    </DashboardLayout>
+  );
+}
+
+export default Admin;
+</file>
+
+</files>
