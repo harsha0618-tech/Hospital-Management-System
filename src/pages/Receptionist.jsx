@@ -68,6 +68,15 @@ function Receptionist() {
       showToast(err.response?.data?.error || "Failed to discharge", "error");
     }
   };
+    const handleMarkPaid = async (visitId) => {
+    try {
+      await api.put(`/visits/${visitId}/payment`, { payment_status: "Paid" });
+      await refresh();
+      showToast("Payment marked as Paid");
+    } catch (err) {
+      showToast(err.response?.data?.error || "Failed to update payment", "error");
+    }
+  };
 
   const filteredPatients = patients.filter(
     (p) =>
@@ -224,13 +233,18 @@ function Receptionist() {
                 </div>
               )}
             </td>
-            <td className="px-4 py-3 whitespace-nowrap">
+                       <td className="px-4 py-3 whitespace-nowrap">
               {patient.total_amount ? (
                 <div className="flex flex-col gap-1 items-start">
                   <span className="text-xs">Total: ₹{patient.total_amount} ({patient.payment_status})</span>
                   <button onClick={() => setPrintBillId(patient.patient_id)} className="text-reception-dark underline text-xs">
                     🖨 Print Bill
                   </button>
+                  {patient.payment_status === "Pending" && (
+                    <button onClick={() => handleMarkPaid(patient.visit_id)} className="text-green-600 underline text-xs font-medium">
+                      ✅ Mark as Paid
+                    </button>
+                  )}
                 </div>
               ) : (
                 <span className="text-gray-400 text-xs">Not billed yet</span>

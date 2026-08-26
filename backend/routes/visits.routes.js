@@ -65,5 +65,25 @@ router.put("/:id/discharge", async (req, res) => {
     res.status(500).json({ error: err.message });
   } finally { client.release(); }
 });
+router.put("/:id/payment", async (req, res) => {
+  const { id } = req.params;
+  const { payment_status } = req.body;
+  if (!["Paid", "Pending"].includes(payment_status)) {
+    return res.status(400).json({ error: "payment_status must be 'Paid' or 'Pending'" });
+  }
+  try {
+    const r = await pool.query(
+      `UPDATE billing SET payment_status = $1, payment_updated_at = NOW()
+       WHERE visit_id = $2 RETURNING *`,
+      [payment_status, id]
+    );
+    if (r.rows.length === 0) {
+      return res.status(404).json({ error: "No bill found for this visit" });
+    }
+    res.json(r.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 export default router;
