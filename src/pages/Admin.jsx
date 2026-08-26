@@ -34,7 +34,18 @@ const toggleHistory = async (patient) => {
     return;
   }
   const { data } = await api.get(`/patients/${patient.patient_id}`);
-  setHistoryVisits((data.visits || []).filter((v) => v.visit_id !== patient.visit_id));
+  const previousVisits = (data.visits || []).filter((v) => v.visit_id !== patient.visit_id);
+  const withReports = await Promise.all(
+    previousVisits.map(async (v) => {
+      try {
+        const { data: reports } = await api.get(`/lab/reports/${v.visit_id}`);
+        return { ...v, lab_reports: reports };
+      } catch {
+        return { ...v, lab_reports: [] };
+      }
+    })
+  );
+  setHistoryVisits(withReports);
   setOpenHistoryId(patient.patient_id);
 };
 const loadStaff = () => {
@@ -437,11 +448,21 @@ const handleSalarySave = async (member) => {
                 <p className="text-xs text-gray-400">No previous visits for this patient.</p>
               ) : (
                 <div className="flex flex-col gap-2">
-                  {historyVisits.map((v) => (
+                                   {historyVisits.map((v) => (
                     <div key={v.visit_id} className="bg-white border border-gray-200 rounded-md px-3 py-2 text-xs">
                       <p className="font-medium text-gray-700 mb-1">{v.visit_date} — {v.doctor_name} ({v.department_name}) — {v.status}</p>
                       <p className="text-gray-600">Diagnosis: {v.diagnosis || "—"}</p>
                       <p className="text-gray-600">Total Bill: ₹{v.total_amount ?? 0} ({v.payment_status ?? "Pending"})</p>
+                      {v.lab_reports && v.lab_reports.length > 0 && (
+                        <div className="mt-2 pl-2 border-l-2 border-admin-DEFAULT/40 flex flex-col gap-1">
+                          <p className="text-gray-500 font-medium">Lab Reports:</p>
+                          {v.lab_reports.map((r) => (
+                            <p key={r.report_id} className="text-gray-600">
+                              {r.test_name}: {r.report_text} (₹{r.cost})
+                            </p>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
