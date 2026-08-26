@@ -18,18 +18,79 @@ router.get("/pending", async (req, res) => {
 });
 
 router.put("/:id/dispense", async (req, res) => {
-  const r = await pool.query(
-    `UPDATE prescriptions SET dispensed = TRUE WHERE prescription_id = $1 RETURNING *`,
-    [req.params.id]
-  );
-  if (r.rows[0]) {
-    await pool.query(
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const pres = await client.query(
+      `SELECT * FROM prescriptions WHERE prescription_id = $1 AND dispensed = FALSE`,
+      [req.params.id]
+    );
+    if (pres.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Prescription already dispensed or not found" });
+    }
+    const { medicine_id, quantity, visit_id } = pres.rows[0];
+
+    const med = await client.query(`SELECT * FROM medicines WHERE medicine_id = $1`, [medicine_id]);
+    if (med.rows[0].stock_qty < quantity) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: `Not enough stock for ${med.rows[0].medicine_name} (only ${med.rows[0].stock_qty} left)` });
+    }
+
+    const r = await client.query(
+      `UPDATE prescriptions SET dispensed = TRUE WHERE prescription_id = $1 RETURNING *`,
+      [req.params.id]
+    );
+    await client.query(
+      `UPDATE medicines SET stock_qty = stock_qty - $1 WHERE medicine_id = $2`,
+      [quantity, medicine_id]
+    );
+    await client.query(
       `INSERT INTO audit_log(action, entity_type, entity_id, performed_by, details)
        VALUES ('medicine_dispensed','prescription',$1,$2,$3)`,
-      [req.params.id, req.user?.full_name || "Unknown", `Dispensed prescription #${req.params.id} for visit #${r.rows[0].visit_id}`]
+      [req.params.id, req.user?.full_name || "Unknown", `Dispensed ${quantity} x ${med.rows[0].medicine_name} for visit #${visit_id}`]
     );
+
+    await client.query("COMMIT");
+    res.json(r.rows[0]);
+  } catch (err) {
+    await client.query("ROLLBACK");
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
-  res.json(r.rows[0]);
+});
+
+router.put("/:id/restock", async (req, res) => {
+  const { quantity } = req.body;
+  if (!quantity || Number(quantity) <= 0) {
+    return res.status(400).json({ error: "Restock quantity must be a positive number" });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const r = await client.query(
+      `UPDATE medicines SET stock_qty = stock_qty + $1 WHERE medicine_id = $2 RETURNING *`,
+      [Number(quantity), req.params.id]
+    );
+    if (r.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Medicine not found" });
+    }
+    await client.query(
+      `INSERT INTO audit_log(action, entity_type, entity_id, performed_by, details)
+       VALUES ('medicine_restocked','medicine',$1,$2,$3)`,
+      [req.params.id, req.user?.full_name || "Unknown", `Restocked ${quantity} units of ${r.rows[0].medicine_name} (new total: ${r.rows[0].stock_qty})`]
+    );
+    await client.query("COMMIT");
+    res.json(r.rows[0]);
+  } catch (err) {
+    await client.query("ROLLBACK");
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
 });
 
 router.get("/stock", async (req, res) => {

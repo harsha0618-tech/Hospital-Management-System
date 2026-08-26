@@ -7,9 +7,9 @@ import api from "../api/axios";
 function Pharmacy() {
   const [pending, setPending] = useState([]);
   const [stock, setStock] = useState([]);
-  const [searchTerm, setSearchTerm] = useState("");
+    const [searchTerm, setSearchTerm] = useState("");
+  const [restockQty, setRestockQty] = useState({});
   const { showToast } = useToast();
-
   const loadData = async () => {
     const [p, s] = await Promise.all([api.get("/pharmacy/pending"), api.get("/pharmacy/stock")]);
     setPending(p.data);
@@ -28,6 +28,21 @@ function Pharmacy() {
     }
   };
 
+    const handleRestock = async (medicineId) => {
+    const qty = Number(restockQty[medicineId]);
+    if (!qty || qty <= 0) {
+      showToast("Enter a valid quantity to restock", "error");
+      return;
+    }
+    try {
+      await api.put(`/pharmacy/${medicineId}/restock`, { quantity: qty });
+      showToast("Stock updated successfully!");
+      setRestockQty((prev) => ({ ...prev, [medicineId]: "" }));
+      await loadData();
+    } catch (err) {
+      showToast(err.response?.data?.error || "Failed to restock", "error");
+    }
+  };
   const filteredPending = pending.filter(
     (p) =>
       p.patient_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -75,10 +90,11 @@ function Pharmacy() {
       <div className="bg-white border border-gray-100 rounded-card shadow-soft overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-pharmacy-light text-pharmacy-dark text-xs uppercase">
-            <tr>
+                        <tr>
               <th className="px-4 py-3 text-left">Medicine</th>
               <th className="px-4 py-3 text-left">Unit Price</th>
               <th className="px-4 py-3 text-left">Stock</th>
+              <th className="px-4 py-3 text-left">Restock</th>
             </tr>
           </thead>
           <tbody>
@@ -87,6 +103,24 @@ function Pharmacy() {
                 <td className="px-4 py-3">{m.medicine_name}</td>
                 <td className="px-4 py-3">₹{m.unit_price}</td>
                 <td className={`px-4 py-3 ${m.stock_qty < 20 ? "text-red-500 font-semibold" : ""}`}>{m.stock_qty}</td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      placeholder="Qty"
+                      value={restockQty[m.medicine_id] || ""}
+                      onChange={(e) => setRestockQty((prev) => ({ ...prev, [m.medicine_id]: e.target.value }))}
+                      className="w-16 border border-gray-200 rounded-md px-2 py-1 text-xs"
+                    />
+                    <button
+                      onClick={() => handleRestock(m.medicine_id)}
+                      className="bg-pharmacy-DEFAULT text-white px-2 py-1 rounded-md text-xs hover:opacity-90"
+                    >
+                      Restock
+                    </button>
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
