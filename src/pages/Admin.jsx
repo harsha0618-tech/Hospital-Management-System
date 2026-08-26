@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import DashboardLayout from "../components/DashboardLayout";
 import SearchBar from "../components/SearchBar";
 import { usePatients } from "../context/PatientContext";
@@ -25,7 +25,18 @@ const [staffForm, setStaffForm] = useState({
 });
 const [staffError, setStaffError] = useState("");
 const [newCredentials, setNewCredentials] = useState(null); // { username, temp_password, full_name }
+const [openHistoryId, setOpenHistoryId] = useState(null);
+const [historyVisits, setHistoryVisits] = useState([]);
 
+const toggleHistory = async (patient) => {
+  if (openHistoryId === patient.patient_id) {
+    setOpenHistoryId(null);
+    return;
+  }
+  const { data } = await api.get(`/patients/${patient.patient_id}`);
+  setHistoryVisits((data.visits || []).filter((v) => v.visit_id !== patient.visit_id));
+  setOpenHistoryId(patient.patient_id);
+};
 const loadStaff = () => {
   api.get("/admin/staff").then((r) => setStaff(r.data));
 };
@@ -368,12 +379,14 @@ const handleSalarySave = async (member) => {
         <th className="px-4 py-3 text-left">Pharmacy</th>
         <th className="px-4 py-3 text-left">Total Bill</th>
         <th className="px-4 py-3 text-left">Payment</th>
-        <th className="px-4 py-3 text-left">Status</th>
+               <th className="px-4 py-3 text-left">Status</th>
+        <th className="px-4 py-3 text-left">History</th>
       </tr>
     </thead>
     <tbody>
-      {filteredPatients.map((p) => (
-        <tr key={p.patient_id} className="border-t border-gray-100">
+          {filteredPatients.map((p) => (
+        <Fragment key={p.patient_id}>
+        <tr className="border-t border-gray-100">
           <td className="px-4 py-3">{p.patient_id}</td>
           <td className="px-4 py-3">{p.full_name}</td>
           <td className="px-4 py-3">{p.age ?? "—"}</td>
@@ -411,7 +424,32 @@ const handleSalarySave = async (member) => {
             </div>
           </td>
           <td className="px-4 py-3">{p.status}</td>
+          <td className="px-4 py-3">
+            <button onClick={() => toggleHistory(p)} className="text-[11px] text-admin-dark underline">
+              {openHistoryId === p.patient_id ? "▲ Hide" : "▼ View"}
+            </button>
+          </td>
         </tr>
+        {openHistoryId === p.patient_id && (
+          <tr>
+            <td colSpan={15} className="px-4 py-3 bg-gray-50">
+              {historyVisits.length === 0 ? (
+                <p className="text-xs text-gray-400">No previous visits for this patient.</p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {historyVisits.map((v) => (
+                    <div key={v.visit_id} className="bg-white border border-gray-200 rounded-md px-3 py-2 text-xs">
+                      <p className="font-medium text-gray-700 mb-1">{v.visit_date} — {v.doctor_name} ({v.department_name}) — {v.status}</p>
+                      <p className="text-gray-600">Diagnosis: {v.diagnosis || "—"}</p>
+                      <p className="text-gray-600">Total Bill: ₹{v.total_amount ?? 0} ({v.payment_status ?? "Pending"})</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </td>
+          </tr>
+        )}
+        </Fragment>
       ))}
       {filteredPatients.length === 0 && (
         <tr>

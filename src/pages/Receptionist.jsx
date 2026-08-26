@@ -16,6 +16,8 @@ function Receptionist() {
   const { patients, addPatient, refresh } = usePatients();
   const { doctors, nurses } = useLookups();
   const [printBillId, setPrintBillId] = useState(null);
+    const [openHistoryId, setOpenHistoryId] = useState(null);
+  const [historyVisits, setHistoryVisits] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const { showToast } = useToast();
   const [formMode, setFormMode] = useState("new");
@@ -57,6 +59,15 @@ function Receptionist() {
     } catch (err) {
       showToast(err.response?.data?.error || "Failed to re-admit patient", "error");
     }
+  };
+    const toggleHistory = async (patient) => {
+    if (openHistoryId === patient.patient_id) {
+      setOpenHistoryId(null);
+      return;
+    }
+    const { data } = await api.get(`/patients/${patient.patient_id}`);
+    setHistoryVisits((data.visits || []).filter((v) => v.visit_id !== patient.visit_id));
+    setOpenHistoryId(patient.patient_id);
   };
 
   const handleDischarge = async (visitId) => {
@@ -202,7 +213,8 @@ function Receptionist() {
         columns={columns}
         rows={filteredPatients}
         roleColor="reception"
-        renderRow={(patient) => (
+               renderRow={(patient) => (
+          <>
           <tr key={patient.patient_id} className="border-t border-gray-100 hover:bg-gray-50">
             <td className="px-4 py-3 whitespace-nowrap">
               {patient.queue_number ? (
@@ -248,9 +260,32 @@ function Receptionist() {
                 </div>
               ) : (
                 <span className="text-gray-400 text-xs">Not billed yet</span>
+                          )}
+            </td>
+          </tr>
+          <tr>
+            <td colSpan={columns.length} className="px-4 py-1 bg-gray-50">
+              <button onClick={() => toggleHistory(patient)} className="text-[11px] text-reception-dark underline">
+                {openHistoryId === patient.patient_id ? "▲ Hide Visit History" : "▼ View Visit History"}
+              </button>
+              {openHistoryId === patient.patient_id && (
+                <div className="mt-2 mb-2 flex flex-col gap-2">
+                  {historyVisits.length === 0 ? (
+                    <p className="text-xs text-gray-400">No previous visits for this patient.</p>
+                  ) : (
+                    historyVisits.map((v) => (
+                      <div key={v.visit_id} className="bg-white border border-gray-200 rounded-md px-3 py-2 text-xs">
+                        <p className="font-medium text-gray-700 mb-1">{v.visit_date} — {v.doctor_name} ({v.department_name}) — {v.status}</p>
+                        <p className="text-gray-600">Diagnosis: {v.diagnosis || "—"}</p>
+                        <p className="text-gray-600">Total Bill: ₹{v.total_amount ?? 0} ({v.payment_status ?? "Pending"})</p>
+                      </div>
+                    ))
+                  )}
+                </div>
               )}
             </td>
           </tr>
+          </>
         )}
       />
 
