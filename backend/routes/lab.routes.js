@@ -15,6 +15,22 @@ router.get("/pending", async (req, res) => {
   res.json(r.rows);
 });
 
+router.get("/reports/:visitId", async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT lr.report_id, lr.test_id, t.test_name, lr.report_text, lr.cost, lr.recorded_at
+       FROM lab_reports lr
+       JOIN tests t ON lr.test_id = t.test_id
+       WHERE lr.visit_id = $1
+       ORDER BY lr.recorded_at DESC`,
+      [req.params.visitId]
+    );
+    res.json(r.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post("/report", async (req, res) => {
   const { visit_id, test_id, report_text, cost } = req.body;
   try {

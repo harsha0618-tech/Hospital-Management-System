@@ -23,18 +23,26 @@ function Doctor() {
   const [selectedMedQty, setSelectedMedQty] = useState(1);
   const [prescribedMeds, setPrescribedMeds] = useState([]);
   const [history, setHistory] = useState([]);
-
-  const openPatient = async (patient) => {
+    const [labReports, setLabReports] = useState([]);
+    const openPatient = async (patient) => {
     setOpenId(patient.patient_id);
     setDiagnosis(patient.diagnosis || "");
     setSelectedTestIds([]);
     setPrescribedMeds([]);
     const full = await getPatient(patient.patient_id);
     setHistory(full.visits || []);
+    try {
+      const { data } = await api.get(`/lab/reports/${patient.visit_id}`);
+      setLabReports(data);
+    } catch (err) {
+      setLabReports([]);
+    }
   };
 
-  const closePatient = () => setOpenId(null);
-
+    const closePatient = () => {
+    setOpenId(null);
+    setLabReports([]);
+  };
   const toggleTest = (testId) => {
     setSelectedTestIds((prev) =>
       prev.includes(testId) ? prev.filter((id) => id !== testId) : [...prev, testId]
@@ -125,6 +133,22 @@ function Doctor() {
                             <div key={v.visit_id} className="bg-white border border-doctor-DEFAULT/40 rounded-md px-3 py-2 text-xs">
                               <p className="font-medium text-doctor-dark mb-1">{v.visit_date} — {v.doctor_name} ({v.department_name})</p>
                               <p className="text-gray-600">Diagnosis: {v.diagnosis || "—"}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                                        <div>
+                      <label className="text-sm font-medium text-doctor-dark block mb-2">Lab Reports</label>
+                      {labReports.length === 0 ? (
+                        <p className="text-xs text-gray-400">No lab reports submitted yet for this visit.</p>
+                      ) : (
+                        <div className="flex flex-col gap-2">
+                          {labReports.map((r) => (
+                            <div key={r.report_id} className="bg-white border border-doctor-DEFAULT/40 rounded-md px-3 py-2 text-xs">
+                              <p className="font-medium text-doctor-dark mb-1">{r.test_name} — ₹{r.cost}</p>
+                              <p className="text-gray-600">{r.report_text}</p>
                             </div>
                           ))}
                         </div>
