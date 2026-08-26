@@ -78,7 +78,7 @@ const handleRoleLogin = async (e) => {
             </div>
             <div className="text-left">
               <h1 className="text-2xl sm:text-4xl font-bold text-brand-dark leading-tight">
-                MCR Multispeciality Hospital
+                 Multispeciality Hospital
               </h1>
               <p className="text-xs sm:text-sm text-gray-400 tracking-wide mt-1">
                 DIGITAL HOSPITAL MANAGEMENT SYSTEM
@@ -92,7 +92,7 @@ const handleRoleLogin = async (e) => {
 
       <section className="text-center max-w-2xl mx-auto px-6 pt-10 pb-12">
         <span className="inline-block bg-brand-light text-brand-dark text-xs font-semibold px-4 py-1.5 rounded-full mb-4 tracking-wide">
-          MCR • DIGITAL HOSPITAL PLATFORM
+           DIGITAL HOSPITAL PLATFORM
         </span>
         <h2 className="text-2xl sm:text-3xl font-bold text-brand-dark leading-tight">
           One system, every department
