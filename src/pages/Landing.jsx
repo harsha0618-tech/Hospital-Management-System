@@ -57,7 +57,7 @@ const handleRoleLogin = async (e) => {
   setError("");
   setLoggingIn(selectedRole);
   try {
-    const data = await login(loginUsername, loginPassword);
+   const data = await login(loginUsername.trim(), loginPassword);
     navigate(roleToPath[data.role] || "/");
   } catch (err) {
     setError(err.response?.data?.error || "Invalid username or password.");
