@@ -123,13 +123,15 @@ function Doctor() {
               <tr>
                 <td colSpan={columns.length} className="bg-doctor-light px-6 py-5">
                   <div className="flex flex-col gap-5">
-                    <div>
+                                       <div>
                       <label className="text-sm font-medium text-doctor-dark block mb-2">Visit History</label>
-                      {history.length <= 1 ? (
+                      {history.filter((v) => v.visit_id !== patient.visit_id).length === 0 ? (
                         <p className="text-xs text-gray-400">No previous visits recorded for this patient.</p>
                       ) : (
                         <div className="flex flex-col gap-2">
-                          {history.slice(1).map((v) => (
+                          {history
+                            .filter((v) => v.visit_id !== patient.visit_id)
+                            .map((v) => (
                             <div key={v.visit_id} className="bg-white border border-doctor-DEFAULT/40 rounded-md px-3 py-2 text-xs">
                               <p className="font-medium text-doctor-dark mb-1">{v.visit_date} — {v.doctor_name} ({v.department_name})</p>
                               <p className="text-gray-600">Diagnosis: {v.diagnosis || "—"}</p>
