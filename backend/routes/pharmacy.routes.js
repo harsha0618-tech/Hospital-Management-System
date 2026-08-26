@@ -1,6 +1,9 @@
 import express from "express";
 import { pool } from "../db.js";
+import { verifyToken } from "../middleware/auth.middleware.js";
 const router = express.Router();
+
+router.use(verifyToken);
 
 router.get("/pending", async (req, res) => {
   const r = await pool.query(`
@@ -19,6 +22,13 @@ router.put("/:id/dispense", async (req, res) => {
     `UPDATE prescriptions SET dispensed = TRUE WHERE prescription_id = $1 RETURNING *`,
     [req.params.id]
   );
+  if (r.rows[0]) {
+    await pool.query(
+      `INSERT INTO audit_log(action, entity_type, entity_id, performed_by, details)
+       VALUES ('medicine_dispensed','prescription',$1,$2,$3)`,
+      [req.params.id, req.user?.full_name || "Unknown", `Dispensed prescription #${req.params.id} for visit #${r.rows[0].visit_id}`]
+    );
+  }
   res.json(r.rows[0]);
 });
 

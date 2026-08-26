@@ -1,6 +1,9 @@
 import express from "express";
 import { pool } from "../db.js";
+import { verifyToken } from "../middleware/auth.middleware.js";
 const router = express.Router();
+
+router.use(verifyToken);
 
 router.get("/vitals/:visitId", async (req, res) => {
   const r = await pool.query(
@@ -17,6 +20,11 @@ router.post("/vitals", async (req, res) => {
       `INSERT INTO vitals(visit_id, nurse_id, bp, temperature, pulse, notes)
        VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
       [visit_id, nurse_id, bp, temperature, pulse, notes]
+    );
+    await pool.query(
+      `INSERT INTO audit_log(action, entity_type, entity_id, performed_by, details)
+       VALUES ('vitals_recorded','visit',$1,$2,$3)`,
+      [visit_id, req.user?.full_name || "Unknown", `BP: ${bp || "—"}, Temp: ${temperature || "—"}, Pulse: ${pulse || "—"}`]
     );
     res.status(201).json(r.rows[0]);
   } catch (err) {

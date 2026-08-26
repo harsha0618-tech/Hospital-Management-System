@@ -41,6 +41,12 @@ router.post("/login", async (req, res) => {
       { expiresIn: "8h" }
     );
 
+    await pool.query(
+      `INSERT INTO audit_log(action, entity_type, entity_id, performed_by, details)
+       VALUES ('login','user',$1,$2,$3)`,
+      [user.user_id, user.full_name, `Logged in as ${user.role}`]
+    );
+
     res.json({ token, role: user.role, full_name: user.full_name, staff_id });
   } catch (err) {
     res.status(500).json({ error: err.message });

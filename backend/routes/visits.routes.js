@@ -29,12 +29,17 @@ router.put("/:id/consult", async (req, res) => {
         [id, test_id]
       );
     }
-    for (const med of medicine_ids) {
+       for (const med of medicine_ids) {
       await client.query(
         `INSERT INTO prescriptions(visit_id, medicine_id, quantity) VALUES ($1,$2,$3)`,
         [id, med.medicine_id, med.quantity || 1]
       );
     }
+    await client.query(
+      `INSERT INTO audit_log(action, entity_type, entity_id, performed_by, details)
+       VALUES ('consultation_saved','visit',$1,$2,$3)`,
+      [id, req.user?.full_name || "Unknown", `Diagnosis "${diagnosis || "—"}" recorded for visit #${id}`]
+    );
     await client.query("COMMIT");
     res.json({ message: "Consultation saved" });
   } catch (err) {

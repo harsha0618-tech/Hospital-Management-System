@@ -1,6 +1,9 @@
 import express from "express";
 import { pool } from "../db.js";
+import { verifyToken } from "../middleware/auth.middleware.js";
 const router = express.Router();
+
+router.use(verifyToken);
 
 router.get("/pending", async (req, res) => {
   const r = await pool.query(`
@@ -37,6 +40,11 @@ router.post("/report", async (req, res) => {
     const r = await pool.query(
       `INSERT INTO lab_reports(visit_id, test_id, report_text, cost) VALUES ($1,$2,$3,$4) RETURNING *`,
       [visit_id, test_id, report_text, cost]
+    );
+    await pool.query(
+      `INSERT INTO audit_log(action, entity_type, entity_id, performed_by, details)
+       VALUES ('lab_report_submitted','visit',$1,$2,$3)`,
+      [visit_id, req.user?.full_name || "Unknown", `Report submitted for test #${test_id} on visit #${visit_id}`]
     );
     res.status(201).json(r.rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
