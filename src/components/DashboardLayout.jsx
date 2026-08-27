@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import api from "../api/axios";
 const navItems = [
   { name: "Receptionist", path: "/receptionist", icon: "📋", color: "reception" },
   { name: "Doctor", path: "/doctor", icon: "🩺", color: "doctor" },
@@ -15,7 +17,36 @@ const navItems = [
 function DashboardLayout({ title, subtitle, icon, colorClass = "brand", children }) {
   const location = useLocation();
   const { user, logout } = useAuth();
-const navigate = useNavigate();
+  const navigate = useNavigate();
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [pwError, setPwError] = useState("");
+  const [pwSuccess, setPwSuccess] = useState("");
+
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    setPwError("");
+    setPwSuccess("");
+    if (newPassword !== confirmPassword) {
+      setPwError("New passwords do not match");
+      return;
+    }
+    try {
+      await api.put("/auth/change-password", { currentPassword, newPassword });
+      setPwSuccess("Password changed successfully!");
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setTimeout(() => {
+        setShowPasswordModal(false);
+        setPwSuccess("");
+      }, 1500);
+    } catch (err) {
+      setPwError(err.response?.data?.error || "Failed to change password");
+    }
+  };
 
   return (
     <div className="min-h-screen flex bg-gray-50">
@@ -87,6 +118,12 @@ const navigate = useNavigate();
             >
               ← Home
             </Link>
+                       <button
+              onClick={() => setShowPasswordModal(true)}
+              className="text-sm text-gray-500 hover:text-gray-800 bg-gray-50 hover:bg-gray-100 px-4 py-2 rounded-full transition"
+            >
+              🔑 Change Password
+            </button>
             <button
   onClick={() => { logout(); navigate("/"); }}
   className="text-sm text-gray-500 hover:text-gray-800 bg-gray-50 hover:bg-gray-100 px-4 py-2 rounded-full transition"
@@ -96,9 +133,60 @@ const navigate = useNavigate();
           </div>
         </header>
 
-        {/* Page content */}
+              {/* Page content */}
         <main className="flex-1 px-6 sm:px-8 py-8 max-w-7xl w-full mx-auto">{children}</main>
       </div>
+
+      {showPasswordModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+            <h2 className="text-lg font-bold text-gray-800 mb-4">Change Password</h2>
+            <form onSubmit={handleChangePassword} className="flex flex-col gap-3">
+              <input
+                type="password"
+                placeholder="Current password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                required
+              />
+              <input
+                type="password"
+                placeholder="New password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                required
+              />
+              <input
+                type="password"
+                placeholder="Confirm new password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                required
+              />
+              {pwError && <p className="text-red-500 text-xs">{pwError}</p>}
+              {pwSuccess && <p className="text-green-600 text-xs">{pwSuccess}</p>}
+              <div className="flex gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={() => { setShowPasswordModal(false); setPwError(""); setPwSuccess(""); }}
+                  className="flex-1 border border-gray-200 text-gray-600 rounded-lg py-2 text-sm hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className={`flex-1 bg-${colorClass}-DEFAULT text-white rounded-lg py-2 text-sm hover:opacity-90`}
+                >
+                  Save
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

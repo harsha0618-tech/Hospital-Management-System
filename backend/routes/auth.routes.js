@@ -2,7 +2,7 @@ import express from "express";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import { pool } from "../db.js";
-
+import { verifyToken } from "../middleware/auth.middleware.js";
 const router = express.Router();
 
 router.post("/login", async (req, res) => {
@@ -48,6 +48,35 @@ router.post("/login", async (req, res) => {
     );
 
     res.json({ token, role: user.role, full_name: user.full_name, staff_id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+router.put("/change-password", verifyToken, async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: "Both current and new password are required" });
+  }
+  if (newPassword.length < 6) {
+    return res.status(400).json({ error: "New password must be at least 6 characters" });
+  }
+  try {
+    const user = await pool.query("SELECT * FROM users WHERE user_id = $1", [req.user.user_id]);
+    if (user.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    const match = await bcrypt.compare(currentPassword, user.rows[0].password_hash);
+    if (!match) {
+      return res.status(401).json({ error: "Current password is incorrect" });
+    }
+    const newHash = await bcrypt.hash(newPassword, 10);
+    await pool.query("UPDATE users SET password_hash = $1 WHERE user_id = $2", [newHash, req.user.user_id]);
+    await pool.query(
+      `INSERT INTO audit_log(action, entity_type, entity_id, performed_by, details)
+       VALUES ('password_changed','user',$1,$2,$3)`,
+      [req.user.user_id, req.user.full_name, `${req.user.full_name} changed their own password`]
+    );
+    res.json({ message: "Password changed successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
