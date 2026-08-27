@@ -24,6 +24,7 @@ function Doctor() {
   const [prescribedMeds, setPrescribedMeds] = useState([]);
   const [history, setHistory] = useState([]);
     const [labReports, setLabReports] = useState([]);
+   const [vitalsList, setVitalsList] = useState([]);   
     const openPatient = async (patient) => {
     setOpenId(patient.patient_id);
     setDiagnosis(patient.diagnosis || "");
@@ -31,17 +32,24 @@ function Doctor() {
     setPrescribedMeds([]);
     const full = await getPatient(patient.patient_id);
     setHistory(full.visits || []);
-    try {
+        try {
       const { data } = await api.get(`/lab/reports/${patient.visit_id}`);
       setLabReports(data);
     } catch (err) {
       setLabReports([]);
+    }
+    try {
+      const { data } = await api.get(`/nurse/vitals/${patient.visit_id}`);
+      setVitalsList(data);
+    } catch (err) {
+      setVitalsList([]);
     }
   };
 
     const closePatient = () => {
     setOpenId(null);
     setLabReports([]);
+    setVitalsList([]);
   };
   const toggleTest = (testId) => {
     setSelectedTestIds((prev) =>
@@ -140,9 +148,27 @@ function Doctor() {
                         </div>
                       )}
                     </div>
-
                                         <div>
+                      <label className="text-sm font-medium text-doctor-dark block mb-2">Vitals (recorded by Nurse)</label>
+                      {vitalsList.length === 0 ? (
+                        <p className="text-xs text-gray-400">No vitals recorded yet for this visit.</p>
+                      ) : (
+                        <div className="flex flex-col gap-2">
+                          {vitalsList.map((v) => (
+                            <div key={v.vitals_id} className="bg-white border border-doctor-DEFAULT/40 rounded-md px-3 py-2 text-xs">
+                              <p className="font-medium text-doctor-dark mb-1">{new Date(v.recorded_at).toLocaleString()}</p>
+                              <p className="text-gray-600">BP: {v.bp || "—"} • Temp: {v.temperature || "—"} • Pulse: {v.pulse || "—"}</p>
+                              {v.notes && <p className="text-gray-600">Notes: {v.notes}</p>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
                       <label className="text-sm font-medium text-doctor-dark block mb-2">Lab Reports</label>
+
+                                      
                       {labReports.length === 0 ? (
                         <p className="text-xs text-gray-400">No lab reports submitted yet for this visit.</p>
                       ) : (
