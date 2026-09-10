@@ -60,6 +60,17 @@ CREATE TABLE queue_counters (
   last_number INT NOT NULL DEFAULT 0
 );
 
+CREATE TABLE vitals (
+  vitals_id SERIAL PRIMARY KEY,
+  visit_id INT REFERENCES visits(visit_id) ON DELETE CASCADE,
+  nurse_id INT REFERENCES nurses(nurse_id),
+  bp VARCHAR(20),
+  temperature VARCHAR(20),
+  pulse VARCHAR(20),
+  notes TEXT,
+  recorded_at TIMESTAMP DEFAULT NOW()
+);
+
 CREATE TABLE tests (
   test_id SERIAL PRIMARY KEY,
   test_name VARCHAR(100) UNIQUE NOT NULL,
@@ -104,7 +115,18 @@ CREATE TABLE billing (
   pharmacy_total NUMERIC(10,2) NOT NULL DEFAULT 0,
   total_amount NUMERIC(10,2) GENERATED ALWAYS AS (consultation_fee + lab_total + pharmacy_total) STORED,
   payment_status payment_status_type NOT NULL DEFAULT 'Pending',
+  payment_updated_at TIMESTAMP,
   generated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE audit_log (
+  log_id SERIAL PRIMARY KEY,
+  action VARCHAR(100) NOT NULL,
+  entity_type VARCHAR(50) NOT NULL,
+  entity_id VARCHAR(50),
+  performed_by VARCHAR(100),
+  details TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
 );
 
 CREATE INDEX idx_visits_patient ON visits(patient_id);
@@ -112,3 +134,4 @@ CREATE INDEX idx_visits_doctor ON visits(doctor_id);
 CREATE INDEX idx_prescriptions_visit ON prescriptions(visit_id);
 CREATE INDEX idx_labreports_visit ON lab_reports(visit_id);
 CREATE INDEX idx_patients_name ON patients(full_name);
+CREATE INDEX idx_vitals_visit ON vitals(visit_id);

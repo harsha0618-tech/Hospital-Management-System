@@ -36,17 +36,13 @@ CREATE TRIGGER trg_generate_queue_number
 BEFORE INSERT ON visits
 FOR EACH ROW EXECUTE FUNCTION generate_queue_number();
 
--- Auto reduce medicine stock the moment a prescription is created
-CREATE OR REPLACE FUNCTION reduce_stock() RETURNS TRIGGER AS $$
-BEGIN
-  UPDATE medicines SET stock_qty = stock_qty - NEW.quantity WHERE medicine_id = NEW.medicine_id;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_reduce_stock
-AFTER INSERT ON prescriptions
-FOR EACH ROW EXECUTE FUNCTION reduce_stock();
+-- NOTE: Medicine stock is NOT reduced via a trigger. It is intentionally
+-- handled in the application layer (backend/routes/pharmacy.routes.js,
+-- inside the PUT /:id/dispense route) so that stock only decreases when
+-- the pharmacist actually dispenses a medicine, not the moment a doctor
+-- prescribes it. This also lets the backend check for sufficient stock
+-- and block dispensing when there isn't enough, which a trigger cannot
+-- do as cleanly.
 
 -- VIEW: flattened patient record (recreates what your UI needs, via JOINs)
 CREATE VIEW patient_full_summary AS
